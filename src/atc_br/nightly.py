@@ -129,7 +129,8 @@ def fetch(t0, t1):
     from huggingface_hub import HfApi, hf_hub_download
     api = HfApi(token=ENV.get("HF_TOKEN"))
     have = sorted(f for f in api.list_repo_files(REPO, repo_type="dataset") if f.endswith(".tar"))
-    want = [f for f in have if t0 <= datetime.strptime(f[:-4], "%Y-%m-%d/%H").replace(tzinfo=timezone.utc).timestamp() < t1]
+    hour = lambda f: datetime.strptime(f[:-4], "%Y-%m-%d/%H").replace(tzinfo=timezone.utc).timestamp()
+    want = [f for f in have if t0 - 3600 < hour(f) < t1]   # every hour that overlaps the window
     (DATA / "adsb").mkdir(parents=True, exist_ok=True)
     tx = (DATA / "transcripts.jsonl").open("a")
     for f in want:
@@ -283,6 +284,23 @@ def fmt_line(d):
 LANDING = re.compile(r"pouso autorizado|livre pouso|autorizad[oa] (?:o )?pouso|clear(?:ed)? to land", re.I)
 
 
+def catalog_event(t, focus, story, clips, tracks):
+    """A moment from the dig catalogs (tiktoks/CANDIDATES_*.md): its time, aircraft and key clips."""
+    tx = [d for d in map(json.loads, open(DATA / "transcripts.jsonl")) if abs(d.get("t", 0) - t) <= 720 and d.get("clip")
+          and (DATA / d["clip"]).exists()]
+    pool = sorted(tx + disk_clips(t - 720, t + 720, {d["clip"] for d in tx}), key=lambda d: d["t"])
+    full = []
+    for c in clips:
+        c = c if c.startswith("clips/") else "clips/SBGR/" + c
+        c = c if c.endswith(".ogg") else c + ".ogg"
+        full.append(c)
+    lines = [d for d in pool if d["clip"] in full]
+    log(f"catalog event: {len(lines)}/{len(full)} key clips found, pool {len(pool)}")
+    cand = {"t0": t, "t1": t, "seeds": [t], "why": ["catálogo: " + story], "hex": focus, "weak": False,
+            "lines": lines or pool[:20], "pool": pool, "shown": lines}
+    return cand, {"candidate": 0, "score": 10, "story": story, "focus_hex_or_callsign": focus, "clips": full}
+
+
 def normal_landing(t0, t1, tracks):
     """The first plain arrival of the window: cleared to land on torre and ADS-B shows it on the ground minutes later."""
     tx = sorted((d for d in map(json.loads, open(DATA / "transcripts.jsonl")) if t0 <= d.get("t", 0) < t1 and d.get("clip")
@@ -393,7 +411,7 @@ agitado. Regras do template (tiktoks/EPISODE_GUIDE.md + TEMPLATE.md):
 def write(pick_, cand, tracks, fix=None, prev=None):
     ids = set(pick_.get("line_ids") or [])
     pool = cand.get("pool") or cand["lines"]
-    picked = [d for d in pool if d["id"] in ids] or cand["lines"][:7]
+    picked = [d for d in pool if d["id"] in ids or d["clip"] in (pick_.get("clips") or [])] or cand["lines"][:7]
     fh0 = (pick_.get("focus_hex_or_callsign") or cand.get("hex") or "").strip()
     cs0 = next((q[6] for q in tracks.get(fh0.lower(), []) if q[6]), fh0.upper())
     # the live transcripts are too rough to find the plane's own calls: re-hear every clip around the event (turbo model,
@@ -695,9 +713,16 @@ def main():
     ap.add_argument("--post", action="store_true")
     ap.add_argument("--normal-landing", action="store_true", help="make just the first plain landing of the window")
     ap.add_argument("--reuse-picks", action="store_true", help="debug: reuse episodes/<day>/picks.json")
+    ap.add_argument("--event", help="catalog mode: event time, UTC ISO (window = ±1 h around it)")
+    ap.add_argument("--focus", default="", help="catalog mode: focus hex")
+    ap.add_argument("--story", default="", help="catalog mode: what happened")
+    ap.add_argument("--clips", default="", help="catalog mode: key clips, comma separated (feed/date/HHMMSS_mmm)")
     ap.add_argument("--only", type=int, help="debug: just this pick index")
     a = ap.parse_args()
     now = datetime.now(timezone.utc)
+    if a.event:
+        ev = datetime.fromisoformat(a.event.replace("Z", "+00:00"))
+        a.end, a.hours = (ev + timedelta(hours=1)).isoformat(), 2
     end = now.replace(minute=0, second=0, microsecond=0) if a.end == "now" else \
         datetime.fromisoformat(a.end.replace("Z", "+00:00")) if a.end else \
         now.replace(hour=7, minute=0, second=0, microsecond=0) - (timedelta(days=1) if now.hour < 7 else timedelta())
@@ -709,7 +734,10 @@ def main():
     tracks = raw_tracks(t0 - 600, t1 + 600)
     state = OUT / "posted.json"
     posted = pull_state(state)
-    if a.normal_landing:
+    if a.event:
+        cand, p = catalog_event(ev.timestamp(), a.focus.lower(), a.story, [c.strip() for c in a.clips.split(",") if c.strip()], tracks)
+        cands, picks = [cand], [p]
+    elif a.normal_landing:
         cand, p = normal_landing(t0, t1, tracks)
         cands, picks = ([cand], [p]) if cand else ([], [])
     else:
