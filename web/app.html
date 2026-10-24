@@ -247,7 +247,9 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
 .hud-top { position: absolute; left: 0; top: 0; right: 0; height: 56px; z-index: 20; display: flex; align-items: center; gap: 22px; padding: 0 24px;
   background: linear-gradient(rgba(5,7,11,.92), rgba(5,7,11,.55) 60%, transparent); }
 .brand { display: flex; align-items: baseline; gap: 10px; }
-.brand b { font: 800 24px/1 var(--f-sans); font-stretch: 125%; letter-spacing: -.01em; }
+.brand b { font: 800 22px/1 var(--f-sans); font-stretch: 100%; letter-spacing: -.01em; white-space: nowrap; }
+.brand span { white-space: nowrap; }
+.listen span { white-space: nowrap; }
 .brand span { font: 500 11px/1 var(--f-mono); letter-spacing: .08em; color: var(--dim); }
 .metric { display: grid; gap: 4px; }
 .metric .k { font: 600 9.5px/1 var(--f-sans); font-stretch: 75%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
