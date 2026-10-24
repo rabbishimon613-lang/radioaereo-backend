@@ -81,6 +81,18 @@ def main():
                 log(f"[metar] {e}")
             time.sleep(600)
     threading.Thread(target=metar_loop, daemon=True).start()
+
+    def stay_awake(url):
+        """Free hosts sleep after 15 min without inbound traffic; a request through our own public URL counts."""
+        from urllib.request import urlopen
+        while True:
+            time.sleep(300)
+            try:
+                urlopen(url.rstrip("/") + "/health", timeout=30).read()
+            except Exception as e:
+                log(f"[awake] {e}")
+    if os.environ.get("RENDER_EXTERNAL_URL"):
+        threading.Thread(target=stay_awake, args=(os.environ["RENDER_EXTERNAL_URL"],), daemon=True).start()
     hub.serve(port=args.port, log=log)
     env = load_env(ROOT)
     if env.get("SUPABASE_URL") and env.get("SUPABASE_SERVICE_KEY"):
