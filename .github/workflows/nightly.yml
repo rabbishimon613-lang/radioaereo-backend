@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: sudo apt-get update -q && sudo apt-get install -yq ffmpeg fonts-dejavu-core
-      - run: pip install -q -e . && python -m playwright install --with-deps chromium
+      - run: pip install -q -e . scipy && python -m playwright install --with-deps chromium
       - name: make (and post) episodes
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
