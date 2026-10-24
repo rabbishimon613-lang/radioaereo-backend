@@ -1,4 +1,4 @@
-"""Live aircraft around an airport: adsb.lol primary, OpenSky fallback. Keeps short trails + daily gz log."""
+"""Live aircraft around an airport: adsb.lol primary, adsb.fi then OpenSky fallback. Keeps short trails + daily gz log."""
 import gzip
 import json
 import threading
@@ -16,8 +16,8 @@ def _get(url: str) -> dict:
         return json.load(r)
 
 
-def _from_adsblol(lat, lon, nm):
-    for a in _get(f"https://api.adsb.lol/v2/point/{lat}/{lon}/{nm}").get("ac", []):
+def _readsb(rows):
+    for a in rows:
         if a.get("lat") is None:
             continue
         alt = a.get("alt_baro")
@@ -27,6 +27,20 @@ def _from_adsblol(lat, lon, nm):
             "gs": a.get("gs"), "track": a.get("track") or a.get("true_heading"), "vs": a.get("baro_rate"),
             "squawk": a.get("squawk"), "category": a.get("category"), "emergency": a.get("emergency"),
         }
+
+
+def _from_adsblol(lat, lon, nm):
+    d = _get(f"https://api.adsb.lol/v2/point/{lat}/{lon}/{nm}")
+    if "ac" not in d:
+        raise RuntimeError(str(d)[:120])
+    return _readsb(d["ac"])
+
+
+def _from_adsbfi(lat, lon, nm):
+    d = _get(f"https://opendata.adsb.fi/api/v2/lat/{lat}/lon/{lon}/dist/{nm}")
+    if "aircraft" not in d:
+        raise RuntimeError(str(d)[:120])
+    return _readsb(d["aircraft"])
 
 
 def _from_opensky(lat, lon, nm):
@@ -68,9 +82,9 @@ class Tracker:
             return [a["callsign"] for a in self.aircraft.values() if a["callsign"]]
 
     def _run(self):
-        source, wait = None, self.interval
+        source, wait = "", self.interval   # "" so the very first poll always logs its source
         while True:
-            for name, fetch in (("adsb.lol", _from_adsblol), ("OpenSky", _from_opensky)):
+            for name, fetch in (("adsb.lol", _from_adsblol), ("adsb.fi", _from_adsbfi), ("OpenSky", _from_opensky)):
                 try:
                     rows = list(fetch(self.lat, self.lon, self.nm))
                     break
@@ -81,7 +95,7 @@ class Tracker:
             if name != source:  # log source changes only, not every failed poll
                 self.log(f"[adsb] source → {name or 'NONE (' + err + ')'}")
                 source = name
-            wait = self.interval if name == "adsb.lol" else 30  # give adsb.lol's rate limit time to reset
+            wait = self.interval if name in ("adsb.lol", "adsb.fi") else 30  # OpenSky rate-limits hard
             self._update(rows)
             time.sleep(wait)
 
