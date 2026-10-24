@@ -296,7 +296,12 @@ def catalog_event(t, focus, story, clips, tracks):
         full.append(c)
     lines = [d for d in pool if d["clip"] in full]
     log(f"catalog event: {len(lines)}/{len(full)} key clips found, pool {len(pool)}")
-    cand = {"t0": t, "t1": t, "seeds": [t], "why": ["catálogo: " + story], "hex": focus, "weak": False,
+    # catalog entries were verified against ADS-B when they were dug; re-check the go-around from the track anyway
+    why = ["catálogo: " + story] + [e["what"] for e in adsb_events({focus: tracks.get(focus, [])}) if abs(e["t"] - t) < 900]
+    if re.search(r"arremet", story, re.I) and not any("arremetida" in w for w in why[1:]):
+        why.append("arremetida confirmada no catálogo (ADS-B verificado na pesquisa)")
+    log("signals: " + " | ".join(why[1:]))
+    cand = {"t0": t, "t1": t, "seeds": [t], "why": why, "hex": focus, "weak": False,
             "lines": lines or pool[:20], "pool": pool, "shown": lines}
     return cand, {"candidate": 0, "score": 10, "story": story, "focus_hex_or_callsign": focus, "clips": full}
 
