@@ -1,0 +1,65 @@
+{
+  "kind": "pista",
+  "status": "posted",
+  "focus": [
+    "TAM3556",
+    "TAM3659"
+  ],
+  "camera": {
+    "follow": false,
+    "center": [
+      -700,
+      -150
+    ],
+    "vw": 3300,
+    "vw_end": 3000,
+    "oy": 0.45
+  },
+  "kicker": "LATAM · Pista 28 direita · 14/10, 16:36",
+  "title": "Decolagem cancelada em 9 segundos",
+  "clips": [
+    {
+      "clip": "clips/SBGR/torre/2026-10-14/193616_317.ogg",
+      "who": "atc",
+      "step": "A torre autoriza o LATAM 3556 a decolar da pista 28 direita.",
+      "note": "Torre: o controlador que cuida das pistas, pousos e decolagens",
+      "text": "Correto, decolagem autorizada, 28 direita, 250 com 12."
+    },
+    {
+      "clip": "clips/SBGR/torre/2026-10-14/193625_045.ogg",
+      "who": "atc",
+      "step": "9 segundos depois, a torre volta atrás.",
+      "text": "Considera cancelada a autorização de decolagem…"
+    },
+    {
+      "clip": "clips/SBGR/torre/2026-10-14/193640_415.ogg",
+      "who": "atc",
+      "step": "O motivo: outro LATAM acabou de pousar e precisa atravessar essa pista.",
+      "note": "Cruzar a pista: em Guarulhos, quem pousa na pista sul atravessa a pista norte pra chegar aos terminais",
+      "text": "TAM 3659, cruza 28 direita, chama o solo 126.9. A aeronave alinhada não vai rolar."
+    },
+    {
+      "clip": "clips/SBGR/torre/2026-10-14/193800_923.ogg",
+      "who": "atc",
+      "step": "Com a pista livre, a torre autoriza de novo.",
+      "text": "TAM 3556, decolagem autorizado 28 direita, 240 com nós."
+    },
+    {
+      "silent": 3.2,
+      "span": 75,
+      "t": 1792006685.3733532,
+      "step": "O A321 decola quase 3 minutos depois da primeira autorização."
+    }
+  ],
+  "caption": "A torre de Guarulhos autorizou a decolagem e cancelou 9 segundos depois: um avião que tinha acabado de pousar precisava cruzar a pista. 🎧 Áudio real do rádio, 14/10.",
+  "hashtags": [
+    "#aviação",
+    "#guarulhos",
+    "#latam",
+    "#controladordevoo",
+    "#aviacaobrasil",
+    "#aeroporto",
+    "#radioaereo"
+  ],
+  "posted": "2026-10-24 TikTok @radioaereo"
+}

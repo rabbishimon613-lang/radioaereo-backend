@@ -1,3 +1,6 @@
 __pycache__/
 .env*
 data/
+tiktok_state.json
+episodes/
+data/

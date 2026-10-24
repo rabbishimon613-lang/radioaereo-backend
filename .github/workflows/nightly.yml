@@ -1,0 +1,46 @@
+# Nightly Rádio Aéreo episodes: last 24 h from the HF archive → pick → write → render → check → post to TikTok.
+name: nightly
+on:
+  schedule:
+    - cron: "0 7 * * *"          # 04:00 BRT
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "extra args, e.g. --normal-landing --end now --hours 3"
+        default: ""
+      post:
+        type: boolean
+        default: true
+concurrency: nightly
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: sudo apt-get update -q && sudo apt-get install -yq ffmpeg fonts-dejavu-core
+      - run: pip install -q -e . && python -m playwright install --with-deps chromium
+      - name: make (and post) episodes
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+          CEREBRAS_API_KEYS: ${{ secrets.CEREBRAS_API_KEYS }}
+          OPENROUTER_API_KEYS: ${{ secrets.OPENROUTER_API_KEYS }}
+          TIKTOK_STATE: ${{ secrets.TIKTOK_STATE }}
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        run: |
+          POST=""
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.post }}" = "true" ]; then POST="--post"; fi
+          python -m atc_br.nightly $POST ${{ inputs.args }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: episodes
+          path: |
+            episodes/**/episode.json
+            episodes/**/video.mp4
+            episodes/**/check.png
+            episodes/shots/*.png
+          retention-days: 14
