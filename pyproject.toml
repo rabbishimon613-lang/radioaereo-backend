@@ -1,0 +1,23 @@
+[project]
+name = "atc-br"
+version = "0.1.0"
+description = "Fonia — live ATC transcription + flight tracking for Guarulhos (SBGR)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mlx-whisper>=0.4.3; sys_platform == 'darwin'",
+    "numpy>=2.4.6",
+    "onnxruntime>=1.30.0",
+    "pillow>=12.3.0",
+    "playwright>=1.63.0",
+    "pyyaml>=6.0.3",
+    "requests>=2.34.2",
+    "soundfile>=0.14.0",
+]
+
+[project.scripts]
+atc-br = "atc_br:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"

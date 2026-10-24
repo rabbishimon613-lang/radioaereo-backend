@@ -1,0 +1,13 @@
+# SBGR feeds — Radio Com Brasil / Aeroescuta (used with owner's permission)
+base: https://ssl1.transmissaodigital.com
+
+airports:
+  SBGR:
+    feeds:
+      final:    {ch: final,   name: "Final SP",    freq: "129.750", path: "20110/FINALGRU129.75RCB",                                    enabled: true}
+      torre:    {ch: torre,   name: "Torre",       freq: "135.200", path: "20105/TORREGRU135.2RCBFONIAEXCLUSIVARADIOCOMBRASIL",         enabled: true}
+      solo1269: {ch: solo,    name: "Solo",        freq: "126.900", path: "20432/solo126.9aeroescuta",                                  enabled: true}
+      solo1217: {ch: solo2,   name: "Solo 2",      freq: "121.700", path: "20105/SOLOGRU121.7RCBFONIAEXCLUSIVARADIOCOMBRASIL",          enabled: true}
+      trafego:  {ch: trafego, name: "Tráfego",     freq: "121.000", path: "20104/TRAFEGOGUARULHOS121.0RCBFONIAEXCLUSIVARADIOCOMBRASIL", enabled: true}
+      atis:     {ch: atis,    name: "ATIS",        freq: "127.750", path: "20102/127.75ATISGRURCB",                                     enabled: true}
+      patio:    {ch: patio,   name: "Pátio LATAM", freq: "136.325", path: "20108/136.325PATIOLATAMGUARULHOSRCB",                        enabled: false}
