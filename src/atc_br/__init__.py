@@ -92,6 +92,9 @@ def main():
             local_publish(event, payload)
             pub.event(event, payload)
         hub.publish = publish
+    if env.get("HF_TOKEN"):
+        from .archive import Archiver
+        Archiver(env["HF_TOKEN"], DATA, log=log).start()
     out = (DATA / "transcripts.jsonl").open("a")
     last_match, pending_rb, last_atis, seq = {}, {}, [0.0], [0]
 

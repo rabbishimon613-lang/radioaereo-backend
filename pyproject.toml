@@ -5,6 +5,7 @@ description = "Rádio Aéreo — live ATC transcription + flight tracking for Gu
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "huggingface_hub>=1.0",
     "mlx-whisper>=0.4.3; sys_platform == 'darwin'",
     "numpy>=2.4.6",
     "onnxruntime>=1.30.0",
