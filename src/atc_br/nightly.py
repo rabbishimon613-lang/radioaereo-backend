@@ -95,26 +95,36 @@ def chat(system, user, tries=8, order=None):
     raise RuntimeError(f"no model answered: {last}")
 
 
-RT = {}   # clip -> re-transcription (shared across attempts and episodes)
+RT = {}   # (clip, model, prompt) -> re-transcription (shared across attempts and episodes)
 
 
-def retranscribe(clip, hint="", model="whisper-large-v3"):
-    if (clip, model) in RT:
-        return RT[(clip, model)]
+def phrase_prompt(cs, go_around=False):
+    """Standard Guarulhos phraseology (no numbers, so nothing gets invented) + the plane's spoken callsign. Whisper hears
+    'autorizado pouso 28 esquerda' instead of 'autorizado por um desequilíbrio'. 'Arremeter' only when ADS-B confirmed one."""
+    return (f"Torre Guarulhos, Controle São Paulo, Solo Guarulhos. {spoken(cs)}. Pista 28 esquerda, 28 direita, 10 esquerda, "
+            "10 direita. Autorizado pouso, autorizado decolagem, vento, graus, nós, mantenha, suba, curva, aproximação, solo."
+            + (" Arremeter." if go_around else ""))
+
+
+def retranscribe(clip, hint="", model="whisper-large-v3", prompt=None):
+    prompt = prompt or (NEUTRAL + " " + hint).strip()
+    if (clip, model, prompt) in RT:
+        return RT[(clip, model, prompt)]
     for i in range(12):
         try:
             with open(DATA / clip, "rb") as f:
                 r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", timeout=90,
                                   headers={"Authorization": f"Bearer {_key('groq')}"}, files={"file": f},
-                                  data={"model": model, "prompt": (NEUTRAL + " " + hint).strip(),
+                                  data={"model": model, "prompt": prompt,
                                         "temperature": 0, "response_format": "verbose_json"})
             if r.status_code == 200:
                 j = r.json()
                 text = j.get("text", "").strip()
-                if "controle de tráfego aéreo" in text.lower() or "aeroporto de guarulhos" in text.lower():
+                if "controle de tráfego aéreo" in text.lower() or "aeroporto de guarulhos" in text.lower() \
+                        or "solo guarulhos. " in text.lower() or "vento, graus, nós" in text.lower():
                     text = ""          # Whisper repeating its prompt = it heard nothing usable
-                RT[(clip, model)] = {"text": text, "language": j.get("language", ""), "duration": j.get("duration", 0)}
-                return RT[(clip, model)]
+                RT[(clip, model, prompt)] = {"text": text, "language": j.get("language", ""), "duration": j.get("duration", 0)}
+                return RT[(clip, model, prompt)]
             if r.status_code != 429:
                 log(f"[whisper] {r.status_code} {r.text[:120]}")
         except Exception as e:
@@ -422,13 +432,14 @@ def write(pick_, cand, tracks, fix=None, prev=None):
     # the live transcripts are too rough to find the plane's own calls: re-hear every clip around the event (turbo model,
     # neutral prompt + the plane's spoken callsign) and keep the ones that name it
     mid = sum(cand.get("seeds") or [picked[0]["t"]]) / len(cand.get("seeds") or [1])
+    pp = phrase_prompt(cs0, go_around=any("arremetida" in w for w in cand["why"]))
     if not cand.get("_swept"):
         pool += disk_clips(mid - 420, mid + 420, {d["clip"] for d in pool})
         pool.sort(key=lambda d: d["t"])
         cand["pool"] = pool
         for d in pool:
             if abs(d["t"] - mid) <= 420 and d.get("duration", 0) >= 1.5 and d["feed"] in ("torre", "final", "solo1269", "solo1217"):
-                r = retranscribe(d["clip"], spoken(cs0))   # turbo echoes the prompt on clipped radio; large-v3 hears it
+                r = retranscribe(d["clip"], prompt=pp)   # turbo echoes the prompt on clipped radio; large-v3 hears it
                 if r:
                     d["_heard"] = r["text"]
         cand["_swept"] = True
@@ -440,7 +451,7 @@ def write(pick_, cand, tracks, fix=None, prev=None):
     hint = spoken(cs0)
     rt = []
     for d in lines:
-        r = d.get("_rt") or retranscribe(d["clip"], hint)
+        r = d.get("_rt") or retranscribe(d["clip"], prompt=pp)
         d["_rt"] = r
         if not r:
             log(f"  [whisper] gave up on {d['clip']}")
