@@ -96,13 +96,16 @@ def main():
     hub.serve(port=args.port, log=log)
     env = load_env(ROOT)
     if env.get("SUPABASE_URL") and env.get("SUPABASE_SERVICE_KEY"):
+        from .replay import Replay
         pub = Publisher(env["SUPABASE_URL"], env["SUPABASE_SERVICE_KEY"], DATA, log=log)
         pub.hello["channels"] = hub.channels
+        replay = Replay(env["SUPABASE_URL"], env["SUPABASE_SERVICE_KEY"], pub.clip_url, log=log)   # the site's 1-h-delayed view
         local_publish = hub.publish
 
         def publish(event, payload):
             local_publish(event, payload)
             pub.event(event, payload)
+            replay.event(event, payload)
         hub.publish = publish
     if env.get("HF_TOKEN"):
         from .archive import Archiver
