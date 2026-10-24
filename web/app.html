@@ -1,5 +1,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Fonia SBGR</title>
+<title>Rádio Aéreo · Guarulhos ao vivo</title>
+<meta name="description" content="Torre, rádio e radar do aeroporto de Guarulhos ao vivo: o rádio real dos controladores e cada avião no mapa.">
+<meta property="og:title" content="Rádio Aéreo · Guarulhos ao vivo">
+<meta property="og:description" content="Torre, rádio e radar de Guarulhos ao vivo — cada pouso, cada história.">
+<meta property="og:image" content="https://radioaereo.com/icon.png">
+<meta property="og:url" content="https://radioaereo.com">
+<meta name="theme-color" content="#12161c">
+<link rel="icon" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Geist+Mono:wght@400..700&display=swap">
@@ -418,7 +426,7 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
   <div id="desk" class="frame" hidden>
     <div class="map" id="dmap"></div>
     <header class="hud-top">
-      <div class="brand"><b>Fonia</b><span>SBGR</span></div>
+      <div class="brand"><b>Rádio Aéreo</b><span>GUARULHOS</span></div>
       <div class="hud-div"></div>
       <div class="metric"><span class="k">Pistas</span><span class="v" id="hRwy"><span class="arr">10R ↓</span> <span class="dep">10L ↑</span></span></div>
       <div class="metric" id="hMetar" title="METAR"><span class="k">Vento</span><span class="v" id="hWind">090°/08<small>KT</small></span></div>
@@ -460,7 +468,7 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
     <div class="notch"></div>
     <div class="map" id="mmap"></div>
     <header class="m-hud">
-      <div class="m-cap g2"><b>Guarulhos</b><span><span id="mHdr">10R↓ 10L↑ · 090/08</span> · <span id="mClock">--:--</span></span></div>
+      <div class="m-cap g2"><b>Rádio Aéreo</b><span><span id="mHdr">10R↓ 10L↑ · 090/08</span> · <span id="mClock">--:--</span></span></div>
       <button class="m-round g2" data-to="desk" aria-label="Ver desktop">DESK</button>
     </header>
     <div class="m-ctl g2">
@@ -494,7 +502,7 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
 (async () => {
 const $ = s => document.querySelector(s);
 let D, LIVE = null, CLOUD = null;
-const CFG = window.FONIA || {};
+const CFG = window.RADIOAEREO || {};
 try { const h = await fetch("/api/hello", { cache: "no-store" }); if (h.ok && (h.headers.get("content-type") || "").includes("json")) LIVE = await h.json(); } catch (e) {}
 if (!LIVE && CFG.supabase) {
   try {

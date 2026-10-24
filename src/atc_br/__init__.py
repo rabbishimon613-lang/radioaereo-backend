@@ -1,4 +1,4 @@
-"""ATC-BR / Fonia live backend: every SBGR feed → VAD → Groq batches → parse → match → airport state → SSE.
+"""Rádio Aéreo live backend: every SBGR feed → VAD → Groq batches → parse → match → airport state → SSE.
 
     uv run atc-br                 # all enabled feeds from config/feeds.yaml
     uv run atc-br --feed torre    # only these feeds

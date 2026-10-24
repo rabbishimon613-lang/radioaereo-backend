@@ -1,7 +1,7 @@
 [project]
 name = "atc-br"
 version = "0.1.0"
-description = "Fonia — live ATC transcription + flight tracking for Guarulhos (SBGR)"
+description = "Rádio Aéreo — live ATC transcription + flight tracking for Guarulhos (SBGR)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
