@@ -38,6 +38,32 @@ body { margin: 0; overflow: hidden; color: var(--text); background: var(--ink-0)
   font: 400 13px/1.4 var(--f-sans); font-feature-settings: "kern" 1; -webkit-font-smoothing: antialiased; }
 body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 999; background: var(--noise); opacity: .45; mix-blend-mode: overlay; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+/* 1-hour-delay replay: discreet but always visible tag next to the clock and the weather */
+.clock .lag { margin: 0 2px 0 0; }
+.lag { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; vertical-align: 1px;
+  font: 700 9px/1.4 var(--f-mono); letter-spacing: .04em; text-transform: none; color: var(--caution);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--caution) 55%, transparent); background: color-mix(in srgb, var(--caution) 9%, transparent); }
+.lag.gap { color: var(--critical); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--critical) 60%, transparent); }
+#intro { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 16px; overflow: auto;
+  background: radial-gradient(120% 90% at 50% 40%, rgba(10,13,20,.55), rgba(10,13,20,.92)); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  transition: opacity .45s var(--ease-out); }
+#intro.out { opacity: 0; pointer-events: none; }
+#intro .in { max-width: 560px; width: 100%; }
+#intro .eyebrow { font: 700 11px/1 var(--f-mono); letter-spacing: .14em; color: var(--caution); text-transform: uppercase; display: flex; gap: 8px; align-items: center; }
+#intro .eyebrow i { width: 8px; height: 8px; border-radius: 50%; background: var(--critical); box-shadow: 0 0 0 4px color-mix(in srgb, var(--critical) 25%, transparent); }
+#intro h1 { margin: 14px 0 12px; font: 800 clamp(34px, 7vw, 54px)/1.02 var(--f-sans); font-stretch: 86%; letter-spacing: -.02em; }
+#intro p { margin: 0 0 18px; font: 400 16px/1.5 var(--f-sans); color: var(--dim); }
+#intro p b { color: var(--text); font-weight: 600; }
+#intro ul { list-style: none; margin: 0 0 22px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+#intro li { font: 500 13px/1.35 var(--f-sans); color: var(--text); padding-left: 12px; border-left: 2px solid var(--line-2); }
+#intro li small { display: block; color: var(--faint); font-size: 12px; font-weight: 400; }
+#intro .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+#intro .go { height: 46px; padding: 0 22px; border-radius: 999px; font: 700 15px var(--f-sans); color: #0A0D14; background: var(--text); box-shadow: var(--sh-2); }
+#intro .go .lag { color: #6b4a00; background: rgba(255,196,82,.35); box-shadow: none; }
+#intro .tt { font: 600 13px var(--f-sans); color: var(--dim); text-decoration: none; padding: 12px 6px; }
+#intro .tt:hover { color: var(--text); }
+#intro .fine { margin-top: 22px; font: 400 11px/1.5 var(--f-sans); color: var(--faint); }
+@media (max-width: 520px) { #intro ul { grid-template-columns: 1fr; } #intro p { font-size: 15px; } }
 button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; border-radius: 8px; }
 .mono { font-family: var(--f-mono); font-feature-settings: var(--num); }
 #vp { position: fixed; inset: 0; overflow: hidden; }
@@ -424,6 +450,27 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
 <div id="vp">
   <div id="loading">CARREGANDO SBGR…</div>
 
+  <!-- ================= LANDING ================= -->
+  <section id="intro" hidden aria-label="Sobre o Rádio Aéreo">
+    <div class="in">
+      <div class="eyebrow"><i></i>Aeroporto de Guarulhos · SBGR</div>
+      <h1>Torre, rádio e radar de Guarulhos.</h1>
+      <p>Ouça as conversas reais entre pilotos e controladores do maior aeroporto do Brasil e veja cada avião no mapa.
+        <b>Tudo é exibido com 1 hora de atraso</b> — assim o rádio, a transcrição e o radar ficam no mesmo relógio, sem descompasso.</p>
+      <ul>
+        <li>Torre, Solo, Controle São Paulo, Tráfego e ATIS<small>as frequências do aeroporto</small></li>
+        <li>Cada transmissão transcrita<small>automática — pode conter erros</small></li>
+        <li>Radar ADS-B dos aviões<small>chegadas, partidas e solo</small></li>
+        <li>Ocorrências<small>arremetidas, emergências, alertas</small></li>
+      </ul>
+      <div class="cta">
+        <button class="go" id="introGo">Ver Guarulhos <span class="lag">−1 h</span></button>
+        <a class="tt" href="https://www.tiktok.com/@radioaereo" target="_blank" rel="noopener">Episódios no TikTok · @radioaereo ↗</a>
+      </div>
+      <div class="fine">Áudio: Radio Com Brasil / Aeroescuta. Dados de voo: ADS-B (adsb.fi). Não use para navegação.</div>
+    </div>
+  </section>
+
   <!-- ================= DESKTOP ================= -->
   <div id="desk" class="frame" hidden>
     <div class="map" id="dmap"></div>
@@ -431,7 +478,7 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
       <div class="brand"><b>Rádio Aéreo</b><span>GUARULHOS</span></div>
       <div class="hud-div"></div>
       <div class="metric"><span class="k">Pistas</span><span class="v" id="hRwy"><span class="arr">10R ↓</span> <span class="dep">10L ↑</span></span></div>
-      <div class="metric" id="hMetar" title="METAR"><span class="k">Vento</span><span class="v" id="hWind">090°/08<small>KT</small></span></div>
+      <div class="metric" id="hMetar" title="METAR"><span class="k">Vento<span class="lag rlag" hidden>há 1 h</span></span><span class="v" id="hWind">090°/08<small>KT</small></span></div>
       <div class="metric"><span class="k">QNH</span><span class="v" id="hQnh">1019</span></div>
       <div class="metric"><span class="k">Visib. · Teto</span><span class="v" id="hVis">10+<small>KM</small> · FEW030</span></div>
       <div class="metric"><span class="k">Temp</span><span class="v" id="hTemp">19°<small>/14°</small></span></div>
@@ -444,7 +491,7 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
       <button class="listen" id="dListen" title="Atalho: L"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></svg><i class="eq"><b></b><b></b><b></b></i><span>Ouvir ao vivo</span></button>
       <button class="kbd" id="dBoardBtn"><kbd>B</kbd>Painel</button>
       <button class="kbd" data-to="mob"><kbd>M</kbd>Mobile</button>
-      <div class="metric clock"><span class="k" id="dZ">--:--Z</span><span class="v" id="dClock">--:--:--</span></div>
+      <div class="metric clock"><span class="k"><span class="lag rlag" hidden title="Reprodução com 1 hora de atraso: rádio, transcrição e radar sincronizados">−1 h</span> <span id="dZ">--:--Z</span></span><span class="v" id="dClock">--:--:--</span></div>
     </header>
     <section class="pane g1 rail-chan"><div class="pane-hd"><span class="t-micro">Frequências</span></div><div id="dChans" style="display:grid;gap:2px"></div></section>
     <section class="pane g1 rail-board"><div class="pane-hd"><span class="t-micro">Painel</span><button class="t-micro" id="dBoardBtn2" style="color:var(--text)">Abrir ›</button></div><table class="board mini" id="dMini"></table></section>
@@ -470,7 +517,7 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
     <div class="notch"></div>
     <div class="map" id="mmap"></div>
     <header class="m-hud">
-      <div class="m-cap g2"><b>Rádio Aéreo</b><span><span id="mHdr">10R↓ 10L↑ · 090/08</span> · <span id="mClock">--:--</span></span></div>
+      <div class="m-cap g2"><b>Rádio Aéreo</b><span><span id="mHdr">10R↓ 10L↑ · 090/08</span> · <span id="mClock">--:--</span><span class="lag rlag" hidden>−1 h</span></span></div>
       <button class="m-round g2" data-to="desk" aria-label="Ver desktop">DESK</button>
     </header>
     <div class="m-ctl g2">
@@ -505,11 +552,17 @@ button:focus-visible { outline: 1.5px solid var(--torre); outline-offset: 2px; b
 const $ = s => document.querySelector(s);
 let D, LIVE = null, CLOUD = null;
 const CFG = window.RADIOAEREO || {};
+// Default view = the recording, replayed exactly 1 h behind on one clock (radio, transcript and radar in sync).
+// ?tempo-real = the raw live feed (each source with its own lag); ?atraso=900 = other delays in seconds (testing).
+const Q = new URLSearchParams(location.search);
+const REPLAY = !!CFG.supabase && !Q.has("tempo-real");
+const DELAY = +(Q.get("atraso") || 3600);
+const rnow = () => Date.now() / 1000 - DELAY;
 try { const h = await fetch("/api/hello", { cache: "no-store" }); if (h.ok && (h.headers.get("content-type") || "").includes("json")) LIVE = await h.json(); } catch (e) {}
 if (!LIVE && CFG.supabase) {
   try {
     const h = await fetch(`${CFG.supabase}/storage/v1/object/public/live/hello.json?t=${Date.now()}`, { cache: "no-store" });
-    if (h.ok) { LIVE = await h.json(); CLOUD = CFG; }
+    if (h.ok) { LIVE = await h.json(); CLOUD = CFG; if (REPLAY) { LIVE.state = null; LIVE.recent = []; LIVE.alerts = []; } }
   } catch (e) {}
 }
 try { D = await (await fetch(LIVE && !CLOUD ? "/sbgr.json" : "sbgr.json")).json(); if (LIVE) { D.actors = []; D.tx = []; } }
@@ -954,7 +1007,7 @@ function resolve(el, text, delay = 400) {
   el.innerHTML = words.map((w, i) => `<span class="w r" data-w="${w.replace(/"/g, "&quot;")}">${roughWord(w, i)}</span>`).join(" ");
   [...el.children].forEach((s, i) => setTimeout(() => { s.textContent = s.dataset.w; s.classList.remove("r"); }, delay + 1000 + i * 35));
 }
-const fmt = (d, o) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", ...o });
+const fmt = (d, o) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo", ...o });   // always Brasília time
 
 // ================= split-flap =================
 const DRUM = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:/·";
@@ -1344,7 +1397,20 @@ function showAlert(kind, cs, rw, why, tx) {
 const clipAudio = new Audio();
 function playClip(path, url) { if (!path && !url) return; clipAudio.src = url || ((LIVE && !CLOUD ? "/" : "") + path); clipAudio.play().catch(() => {}); }
 const AUD = {}; let listening = false;
+const chanOn = k => mode === "desk" ? !(muted.has(k) || (solo && solo !== k)) : (mListen === "mix" || mListen === k);
+const RAUD = {};
+function replayAudio(tx) {
+  if (!listening || !tx.clip_url || !chanOn(tx.ch)) return;
+  const el = RAUD[tx.ch] || (RAUD[tx.ch] = new Audio());
+  el.src = tx.clip_url; el.play().catch(() => {});
+}
 function audioSync() {
+  if (REPLAY) {
+    if (!listening) for (const el of Object.values(RAUD)) el.pause();
+    $("#dListen span").textContent = listening ? "Ouvindo · 1 h atrás · parar" : "Ouvir · 1 h atrás";
+    $("#dListen").classList.toggle("on", listening);
+    return;
+  }
   for (const [k, c] of Object.entries(CH)) {
     if (!c.stream || k === "atis") continue;
     const on = listening && (mode === "desk" ? !(muted.has(k) || (solo && solo !== k)) : (mListen === "mix" || mListen === k));
@@ -1363,7 +1429,8 @@ function audioSync() {
 }
 $("#dListen").onclick = () => { listening = !listening; audioSync(); };
 if (!LIVE) $("#dListen").hidden = true;
-if (LIVE) { paused = true; $("#mPP").innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></svg>'; $("#mSpk").textContent = "toque ▶ para ouvir ao vivo"; }
+if (LIVE) { paused = true; $("#mPP").innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></svg>'; $("#mSpk").textContent = REPLAY ? "toque ▶ para ouvir · 1 h atrás" : "toque ▶ para ouvir ao vivo"; }
+if (REPLAY) { audioSync(); document.querySelectorAll(".rlag").forEach(e => e.hidden = false); }
 function updateHeader(st) {
   const m = st.metar || {};
   if (m.rawOb) {
@@ -1381,7 +1448,7 @@ function updateHeader(st) {
   if (st.movs) $("#dKpi").innerHTML = `${st.movs.hour}<small>${st.movs.dep}↑ ${st.movs.arr}↓</small>`;
 }
 if (LIVE) {
-  $("#hMode").textContent = "";
+  $("#hMode").textContent = REPLAY ? "⏱ 1 h de atraso" : "";
   const ingest = st => {
     LSTATE = st; const now = performance.now(), seen = new Set();
     for (const s of st.ac) {
@@ -1407,7 +1474,42 @@ if (LIVE) {
     vox: v => { chanAct[v.ch] = performance.now() + v.duration * 1000; },
     alert: a => { if (a.src === "adsb") showAlert(a.kind, a.cs, a.rw, "detectado pelo radar"); },
   };
-  if (CLOUD) {
+  if (REPLAY) {
+    const CHUNK = 600, RCH = {};
+    const key = t0 => { const p = new Date(t0 * 1000).toISOString(); return `${p.slice(0, 10)}/${p.slice(11, 13)}${p.slice(14, 16)}`; };
+    const load = async t0 => {
+      if (RCH[t0]) return;
+      RCH[t0] = "loading";
+      try {
+        const r = await fetch(`${CLOUD.supabase}/storage/v1/object/public/replay/SBGR/${key(t0)}.json.gz`);
+        if (!r.ok) throw new Error(r.status);
+        RCH[t0] = JSON.parse(await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).text()).ev;
+      } catch (e) { RCH[t0] = "missing"; }
+    };
+    const c0 = Math.floor(rnow() / CHUNK) * CHUNK;
+    await Promise.all([load(c0 - CHUNK), load(c0)]);
+    let lastT = rnow();
+    // first frame: the newest aircraft snapshot and the last 10 min of radio, as of one hour ago
+    const past = [...(Array.isArray(RCH[c0 - CHUNK]) ? RCH[c0 - CHUNK] : []), ...(Array.isArray(RCH[c0]) ? RCH[c0] : [])].filter(e => e[0] <= lastT);
+    const st = past.filter(e => e[1] === "state").pop();
+    if (st) ingest(st[2]);
+    past.filter(e => e[1] === "tx" && e[0] > lastT - 600).forEach(e => { pushFeed($("#dFeed"), e[2], 12); pushFeed($("#mFeed"), e[2], 40); });
+    const lagTag = (txt, gap) => document.querySelectorAll(".rlag").forEach(el => { if (el.closest("#hMetar")) return; el.textContent = txt; el.classList.toggle("gap", gap); });
+    setInterval(() => {
+      const T = rnow(), c = Math.floor(T / CHUNK) * CHUNK;
+      load(c); if (T - c > CHUNK - 120) load(c + CHUNK);
+      for (const k of [c - CHUNK, c]) {
+        const ev = RCH[k];
+        if (!Array.isArray(ev)) continue;
+        for (const e of ev) if (e[0] > lastT && e[0] <= T) { handlers[e[1]] && handlers[e[1]](e[2]); if (e[1] === "tx") replayAudio(e[2]); }
+      }
+      lastT = T;
+      for (const k in RCH) if (+k < c - 2 * CHUNK) delete RCH[k];
+      const miss = RCH[c] === "missing";
+      lagTag(miss ? "−1 h · sem gravação" : "−1 h", miss);
+      if (miss && !RCH[c + "r"]) { RCH[c + "r"] = 1; setTimeout(() => { delete RCH[c]; delete RCH[c + "r"]; }, 60000); }   // retry a late chunk
+    }, 200);
+  } else if (CLOUD) {
     await new Promise((ok, no) => { const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"; sc.onload = ok; sc.onerror = no; document.head.append(sc); });
     const sb = window.supabase.createClient(CLOUD.supabase, CLOUD.anon);
     const ch = sb.channel("sbgr");
@@ -1427,7 +1529,7 @@ function frame(now) {
   for (const tx of TX) if (wrapped ? (tx.t > lastT || tx.t <= t) : (tx.t > lastT && tx.t <= t)) fire(tx);
   lastT = t;
   if (wrapped) { for (const id in rwyClr) rwyClr[id] = null; }
-  const d = new Date();
+  const d = REPLAY ? new Date(rnow() * 1000) : new Date();
   if (mode === "desk") {
     dmap.update(t, now);
     if (now - lastWave > 40) { drawWaves(); lastWave = now; }
@@ -1450,7 +1552,7 @@ function frame(now) {
       if (changed) { if (!$("#dBoard").hidden) { buildBoard($("#bTable"), BOARD[bTab], false, bTab); } if (!$("#mBoard").hidden) mBoard(); }
     }
     if (mode === "desk") {
-      $("#dZ").textContent = d.toISOString().slice(11, 16) + "Z · BRT";
+      $("#dZ").textContent = d.toISOString().slice(11, 16) + (REPLAY ? "Z" : "Z · BRT");
       rwyBoard(t); fillBoard($("#dMini"), miniRows, t, true); renderTarget();
       let air = 0, gnd = 0; for (const a of ACT) { const p = pos(a, t); if (!p) continue; const k = phase(a, t)[2]; if (p.z > 30) air++; else if (k !== "park") gnd++; }
       $("#dCount").innerHTML = `${air}<small>AR</small> · ${gnd}<small>SOLO</small>`;
@@ -1460,5 +1562,10 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+if (!Q.has("app")) {
+  const intro = $("#intro");
+  intro.hidden = false;
+  $("#introGo").onclick = () => { intro.classList.add("out"); setTimeout(() => intro.hidden = true, 500); };
+}
 })();
 </script>
