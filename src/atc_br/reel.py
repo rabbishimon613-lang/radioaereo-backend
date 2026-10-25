@@ -8,6 +8,7 @@ import bisect
 import gzip
 import json
 import math
+import re
 import subprocess
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -371,7 +372,7 @@ def render(spec_path: Path, out: Path | None = None, log=print):
     fhexes = [h for h in fhexes if h]
     fhex = fhexes[0] if fhexes else None
     cam = spec.get("camera", {})
-    head, head_h = _header_layer(spec)
+    head, head_h = _header_layer(spec, segs[0]["t"])
 
     # protected window for the focus aircraft, per beat: below the step text, above the caption card + note
     def window(sg):
@@ -606,14 +607,28 @@ def _measure(im, M, box, tracks, T, hexes):
     im.alpha_composite(lay)
 
 
-def _header_layer(spec):
-    """Static top block in Portuguese: kicker (airline · aircraft · route) and a short title."""
+MESES = "Janeiro Fevereiro Março Abril Maio Junho Julho Agosto Setembro Outubro Novembro Dezembro".split()
+KICKER_DATE = re.compile(r"\s*·\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?,?\s*\d{1,2}[:h]\d{2}h?\s*$")
+
+
+def when(t):
+    """'15:23h, 23 de Janeiro 2026' (Brasília time) — the episode's date line, big enough to read on a phone."""
+    d = datetime.fromtimestamp(t, BRT)
+    return f"{d:%H:%M}h, {d.day} de {MESES[d.month - 1]} {d.year}"
+
+
+def _header_layer(spec, t0=None):
+    """Static top block in Portuguese: kicker (airline · aircraft), date line, and a short title."""
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     m, y = SAFE_L + 4, SAFE_T + 62
     if spec.get("kicker"):
-        d.text((m, y), spec["kicker"].upper(), font=font("mono", 26, 700), fill=AMBER)
-        y += 50
+        kicker = KICKER_DATE.sub("", spec["kicker"]) if t0 else spec["kicker"]   # the date gets its own, bigger line
+        d.text((m, y), kicker.upper(), font=font("mono", 26, 700), fill=AMBER)
+        y += 44
+    if t0:
+        d.text((m, y), when(t0), font=font("sans", 36, 700, 100), fill=TEXT)
+        y += 56
     tf = font("sans", 76, 830, 80)
     for line in wrap(spec["title"].split(), tf, SAFE_R - m):
         d.text((m, y), " ".join(line), font=tf, fill=TEXT)
@@ -682,7 +697,7 @@ def _clock(d, T, v, radio=True):
     m, f, y = SAFE_L + 4, font("mono", 24, 600), SAFE_T + 22
     d.ellipse((m, y - 8, m + 16, y + 8), fill=(255, 84, 84, 255) if int(v * 2) % 2 == 0 else (150, 50, 50, 255))
     d.text((m + 28, y), ("RÁDIO REAL" if radio else "DADOS REAIS") + " · GUARULHOS", font=f, fill=DIM, anchor="lm")
-    d.text((SAFE_R, y), datetime.fromtimestamp(T, BRT).strftime("%H:%M:%S"), font=f, fill=DIM, anchor="rm")
+    d.text((SAFE_R, y), datetime.fromtimestamp(T, BRT).strftime("%H:%M:%Sh"), font=font("mono", 28, 700), fill=TEXT, anchor="rm")
 
 
 def _card_layout(s):
