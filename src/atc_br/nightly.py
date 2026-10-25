@@ -410,8 +410,9 @@ agitado. Regras do template (tiktoks/EPISODE_GUIDE.md + TEMPLATE.md):
 - Legenda: rádio em português → "text" = transcrição literal, SEM "pt". O Whisper às vezes inventa palavras no começo/fim de
   áudio ruim (saudações em outra língua, "obrigado por assistir"…): corte essas partes com "…" — nunca traduza lixo.
   Rádio em inglês → "pt" = tradução simples em português (texto grande) e "text" = original (pequeno).
-- "who": "atc" (controlador) ou "plt" (piloto). "step": uma frase curta, português simples, o que está acontecendo agora.
-- "note" só quando aparece jargão, uma vez por termo, formato "Termo: explicação curta" (Solo, Torre, heavy, arremeter,
+- "who": "atc" (controlador) ou "plt" (piloto). "step": uma frase curta (máx 90 caracteres), português simples, o que está
+  acontecendo agora. Texto curto = cartão pequeno = o mapa e o avião ficam visíveis (regra do template).
+- "note" (máx 75 caracteres) só quando aparece jargão, uma vez por termo, formato "Termo: explicação curta" (Solo, Torre, heavy, arremeter,
   milha, pista de táxi, alinhe e mantenha…). "taxi": letras de taxiway citadas, se houver.
 - Beat "silent" no fim só se o ADS-B mostrar o desfecho: {"silent": 3.0, "span": segundos reais, "t": epoch, "step": "..."}.
 - "kind": etiqueta curta. "kicker": "Companhia · Avião · DD/MM, HH:MM" (horário de Brasília). "title": ≤ 40 caracteres, gancho.
@@ -525,8 +526,10 @@ def problems(spec, rts, tracks):
     for c in spec.get("clips", []):
         if not c.get("step"):
             p.append(f"beat sem step: {c.get('clip') or 'silent'}")
-        elif len(c["step"]) > 120:
-            p.append(f"step longo demais ({len(c['step'])} caracteres), máx 120: {c['step']}")
+        elif len(c["step"]) > 90:
+            p.append(f"step longo demais ({len(c['step'])} caracteres), máx 90: {c['step']}")
+        if c.get("note") and len(c["note"]) > 75:
+            p.append(f"note longa demais ({len(c['note'])} caracteres), máx 75: {c['note']}")
         if c.get("silent") is not None:
             first = min((_clip_t(x["clip"]) for x in clips), default=0)
             last = max((_clip_t(x["clip"]) for x in clips), default=0)
@@ -624,6 +627,12 @@ def video_checks(mp4, spec, tracks):
                                capture_output=True, text=True).stdout or 0)
     if not 20 <= dur <= 50.05:
         p.append(f"vídeo com {dur:.1f}s; precisa 20–50 s")
+    lay = mp4.parent / "layout.json"           # written by the renderer: was the plane ever under the text?
+    if lay.exists():
+        L = json.loads(lay.read_text())
+        if len(L.get("covered_seconds", [])) > 6 or L.get("tight_seconds"):
+            p.append("o avião fica embaixo do texto (cartão/nota/step altos demais): encurte step, note e pt desses beats "
+                     f"(segundos {sorted(set(L.get('covered_seconds', []) + L.get('tight_seconds', [])))[:6]})")
     hx = next((f for f in spec["focus"] if f in tracks), None)
     if hx:
         ts = [p_[0] for p_ in tracks[hx]]

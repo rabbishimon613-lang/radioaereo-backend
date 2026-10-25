@@ -23,12 +23,15 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
 FONTS = ROOT / "assets" / "fonts"
 W, H, FPS, SR = 1080, 1920, 30, 48000
-# Platform safe zone (TikTok organic ∪ Instagram Reels, 1080x1920): the like/comment/share rail covers the right 140 px,
-# caption + handle + sound bar the bottom 484 px, status/tabs the top 130 px. Everything that carries meaning stays inside;
-# the map runs full-bleed underneath as decoration.
-SAFE_L, SAFE_R, SAFE_T, SAFE_B = 60, 940, 130, 1436
+# Platform safe zone, v2 (2026-10-24), measured on a real tall iPhone running TikTok: the app scales the 1080x1920 frame to
+# ~0.94 and crops ~47 px off each side; status bar + search bar cover y 0–220, the like/comment rail starts at x ≈ 900,
+# caption + handle the bottom ~480 px. Everything that carries meaning stays inside; the map runs full-bleed underneath.
+SAFE_L, SAFE_R, SAFE_T, SAFE_B = 100, 860, 240, 1436
 SAFE_CX = (SAFE_L + SAFE_R) / 2
-OY_MAX = .44                                   # focus aircraft / camera anchor at most 44 % down the frame
+# The focus aircraft lives in a protected window between the step text and the caption card (+ note): the camera puts it
+# in the middle of that gap on every beat, and nothing is ever drawn over it. PLANE_CLEAR = room kept above/below it.
+PLANE_CLEAR_UP, PLANE_CLEAR_DOWN = 90, 80
+BIG_PT, BIG_LEAD, ORIG_PT, ORIG_LEAD = 50, 62, 29, 38   # caption card text (px at 1080 wide)
 MAX_LEN = 50.0                                 # hard cap, seconds, end card included
 INTRO, GAP, FF, OUTRO = 0.05, 1.1, 2.4, 2.4   # FF: screen time for a long real-time jump
 BRT = timezone(timedelta(hours=-3))
@@ -368,6 +371,28 @@ def render(spec_path: Path, out: Path | None = None, log=print):
     fhexes = [h for h in fhexes if h]
     fhex = fhexes[0] if fhexes else None
     cam = spec.get("camera", {})
+    head, head_h = _header_layer(spec)
+
+    # protected window for the focus aircraft, per beat: below the step text, above the caption card + note
+    def window(sg):
+        lo = _step_bottom(sg, head_h) + PLANE_CLEAR_UP
+        hi = (_card_layout(sg)[0] if sg.get("clip") else SAFE_B - 60) - PLANE_CLEAR_DOWN
+        return lo, hi
+    wins = [window(sg) for sg in segs]
+    beat_at = [max((i for i, sg in enumerate(segs) if sg["v0"] - .05 <= f / FPS), default=0) for f in range(n)]
+    want, tight = [], []
+    for f in range(n):                      # intersect the windows of the beats around this frame so transitions stay clear
+        near = {beat_at[j] for j in range(max(0, f - FPS // 2), min(n, f + FPS // 2 + 1))}
+        lo, hi = max(wins[b][0] for b in near), min(wins[b][1] for b in near)
+        if hi < lo:
+            tight.append(round(f / FPS, 1))
+            lo, hi = wins[beat_at[f]]
+        want.append((lo + hi) / 2)
+    ys = [sum(want[max(0, f - 8):f + 9]) / len(want[max(0, f - 8):f + 9]) for f in range(n)]
+    oys = [y / H for y in ys]
+    LAYOUT.update(wins=wins, beat_at=beat_at)
+    if tight:
+        log(f"  ⚠ layout: no clear window for the plane at {tight[:5]}… (step/card too tall)")
 
     # camera path: follow the first focus aircraft (smoothed), or sit on a fixed point (default: middle of the field)
     if fhex and cam.get("follow", True):
@@ -377,18 +402,18 @@ def render(spec_path: Path, out: Path | None = None, log=print):
             raw.append(rot(p[1], p[2]) if p else (raw[-1] if raw else None))
         first = next(r for r in raw if r)
         raw = [r or first for r in raw]
-        # smooth over ±2 s of video but never more than ±20 real seconds, so fast-forwards keep the plane in frame
+        # smooth over ±0.5 s of video and never more than ±20 real seconds: steady, but the plane stays on its mark
         rt = [real(f / FPS) for f in range(n)]
         path = []
         for i in range(n):
-            lo, hi = max(0, i - 2 * FPS), min(n, i + 2 * FPS + 1)
+            lo, hi = max(0, i - FPS // 2), min(n, i + FPS // 2 + 1)
             win = [raw[j] for j in range(lo, hi) if abs(rt[j] - rt[i]) <= 20]
             path.append(tuple(sum(c) / len(c) for c in zip(*win)))
         vw0, vw1, oy = cam.get("vw", 1500), cam.get("vw_end", 1250), cam.get("oy", .42)
     else:
         path = [rot(*cam.get("center", (400, -380)))] * n
         vw0, vw1, oy = cam.get("vw", 2700), cam.get("vw_end", 2400), cam.get("oy", .40)
-    oy = min(oy, OY_MAX)          # template: the subject never sits low enough to hide behind the caption card
+    # (spec camera "oy" is ignored: the protected window decides where the plane sits)
     # only draw the part of the world the camera will see, at a resolution that matches the tightest zoom
     hw, hh = max(vw0, vw1) / 2 + 300, max(vw0, vw1) * H / W + 300
     xs, ys = zip(*path)
@@ -408,19 +433,27 @@ def render(spec_path: Path, out: Path | None = None, log=print):
 
     header_grad = _vgrad(900, (0, 0, 0, 240), (0, 0, 0, 0))
     footer_grad = _vgrad(900, (0, 0, 0, 0), (0, 0, 0, 245))
-    head, head_h = _header_layer(spec)
     radio = any(s.get("clip") for s in segs)
+    covered = []
     cover = None
     for f in range(n):
         v = f / FPS
         T = real(v)
         u = (v / total) ** .9
+        oy = oys[f]
+        LAYOUT["lo"], LAYOUT["hi"] = wins[beat_at[f]]
         im, box = M.frame(*path[f], vw0 + (vw1 - vw0) * u, oy)
         im = im.convert("RGBA")
         d = ImageDraw.Draw(im)
         beat = max((i for i, s in enumerate(segs) if s["v0"] - .05 <= v), default=0)
         _taxi(im, M, box, segs[beat].get("taxi", []), v - segs[beat]["v0"], (SAFE_CX, H * oy))
         _aircraft(im, d, M, box, tracks, T, fhexes)
+        if fhex:                                   # hard check: the focus plane is never under the text
+            q = at(tracks[fhex], T, gap=900)
+            if q:
+                X, Y = M.to_frame(box, *M.px(q[1], q[2]))
+                if SAFE_L - 40 < X < SAFE_R + 40 and not (LAYOUT["lo"] - PLANE_CLEAR_UP + 30 <= Y <= LAYOUT["hi"] + PLANE_CLEAR_DOWN - 30):
+                    covered.append(round(v, 1))
         if spec.get("measure") and spec.get("measure_from", 0) <= beat < spec.get("measure_until", len(segs)):
             _measure(im, M, box, tracks, T, [h for h in fhexes[:2]])
         ffa = _ff_amount(v, segs)
@@ -453,8 +486,15 @@ def render(spec_path: Path, out: Path | None = None, log=print):
     wav.unlink()
     if cover:
         cover.save(out.parent / "cover.jpg", quality=90)
+    (out.parent / "layout.json").write_text(json.dumps({"tight_seconds": tight, "covered_seconds": covered,
+                                                          "safe": [SAFE_L, SAFE_T, SAFE_R, SAFE_B]}))
+    if covered:
+        log(f"  ⚠ focus plane under text for {len(covered) / FPS:.1f}s (from {covered[0]}s)")
     log(f"wrote {out}")
     return out
+
+
+LAYOUT = {"lo": SAFE_T + 400, "hi": SAFE_B - 500}   # current frame's protected window (set by render)
 
 
 def _vgrad(h, top, bot):
@@ -532,7 +572,7 @@ def _measure(im, M, box, tracks, T, hexes):
     w = max(f1.getlength(txt), f2.getlength(sub)) + 40
     ox = 170 if mx < SAFE_CX else -170
     mx = min(max(mx + ox, SAFE_L + w / 2), SAFE_R - w / 2) - ox      # keep the tag clear of the right rail
-    my = min(max(my, SAFE_T + 440), SAFE_B - 140)
+    my = min(max(my, LAYOUT["lo"] - PLANE_CLEAR_UP + 50), LAYOUT["hi"] + PLANE_CLEAR_DOWN - 50)   # never on the card/step
     d.rounded_rectangle((mx + ox - w / 2, my - 48, mx + ox + w / 2, my + 48), 16, fill=(14, 17, 26, 240), outline=(255, 255, 255, 120), width=2)
     d.text((mx + ox, my - 14), txt, font=f1, fill=TEXT, anchor="mm")
     d.text((mx + ox, my + 24), sub, font=f2, fill=DIM, anchor="mm")
@@ -595,7 +635,8 @@ def _taxi(im, M, box, refs, t, anchor=(SAFE_CX, H * .42)):
             pts = [M.to_frame(box, *M.px(x, y)) for x, y in line]
             d.line(pts, fill=(255, 196, 82, int(90 * a)), width=max(6, int(26 * M.k * k)), joint="curve")
             d.line(pts, fill=(255, 214, 110, int(255 * a)), width=4, joint="curve")
-            on = [p for p in pts if SAFE_L + 120 < p[0] < SAFE_R - 120 and 520 < p[1] < 1000]
+            on = [p for p in pts if SAFE_L + 120 < p[0] < SAFE_R - 120
+                  and LAYOUT["lo"] - PLANE_CLEAR_UP + 30 < p[1] < LAYOUT["hi"] + PLANE_CLEAR_DOWN - 30]
             if on and (best is None or len(on) > len(best)):
                 best = on
         if best:
@@ -617,6 +658,30 @@ def _clock(d, T, v, radio=True):
     d.text((SAFE_R, y), datetime.fromtimestamp(T, BRT).strftime("%H:%M:%S"), font=f, fill=DIM, anchor="rm")
 
 
+def _card_layout(s):
+    """(card top y, card height, note height) for a beat — the same numbers _caption draws with."""
+    cw = SAFE_R - SAFE_L
+    big, of = font("sans", BIG_PT, 720, 92), font("sans", ORIG_PT, 500, 100)
+    lines = wrap((s.get("pt") or s.get("text") or "").split(), big, cw - 70)
+    orig = s["text"] if s.get("pt") and s["pt"] != s["text"] else None
+    olines = wrap(f"“{orig}”".split(), of, cw - 70) if orig else []
+    h = 104 + len(lines) * BIG_LEAD + (36 + len(olines) * ORIG_LEAD if orig else 0) + 30
+    nh = 0
+    if s.get("note"):
+        term, _, expl = s["note"].partition(":")
+        lf, tf = font("mono", 24, 800), font("sans", 32, 520, 100)
+        nh = 26 + len(wrap(expl.split(), tf, cw - 60 - lf.getlength(term.upper()) - 24)) * 42 + 18
+    return SAFE_B - h - nh, h, nh
+
+
+def _step_bottom(s, y0):
+    if not s.get("step"):
+        return y0
+    nf, sf = font("mono", 26, 700), font("sans", 38, 560, 100)
+    x0 = SAFE_L + 4 + nf.getlength("0/0") + 46
+    return y0 + 6 + 20 + len(wrap(s["step"].split(), sf, SAFE_R - x0)) * 50
+
+
 def _caption(im, d, s, v, lvl):
     """Card: channel + speaker, big Portuguese meaning (karaoke), then the real transcript small underneath."""
     m, cw = SAFE_L, SAFE_R - SAFE_L
@@ -624,14 +689,14 @@ def _caption(im, d, s, v, lvl):
     c = CH.get(chan(feed), DIM)
     name, freq = CH_NAME.get(feed, (feed.upper(), ""))
     who = {"atc": "CONTROLADOR", "plt": "PILOTO"}.get(s.get("who"), "")
-    big = font("sans", 54, 720, 92)
+    big = font("sans", BIG_PT, 720, 92)
     pt = s.get("pt") or s["text"]
     words = pt.split()
     lines = wrap(words, big, cw - 70)
     orig = s["text"] if s.get("pt") and s["pt"] != s["text"] else None
-    of = font("sans", 31, 500, 100)
+    of = font("sans", ORIG_PT, 500, 100)
     olines = wrap(f"“{orig}”".split(), of, cw - 70) if orig else []
-    h = 104 + len(lines) * 65 + (36 + len(olines) * 40 if orig else 0) + 30
+    h = 104 + len(lines) * BIG_LEAD + (36 + len(olines) * ORIG_LEAD if orig else 0) + 30
     y0 = SAFE_B - h
     card = Image.new("RGBA", (cw, h), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
@@ -671,14 +736,14 @@ def _caption(im, d, s, v, lvl):
             d.text((lx, y), w, font=big, fill=col)
             lx += big.getlength(w + " ")
             acc += len(w) + 1
-        y += 65
+        y += BIG_LEAD
     if orig:
         y += 22
         d.line((x, y - 8, SAFE_R - 30, y - 8), fill=(255, 255, 255, 22), width=1)
         y += 6
         for line in olines:
             d.text((x, y), " ".join(line), font=of, fill=DIM)
-            y += 40
+            y += ORIG_LEAD
 
 
 def _ff_amount(v, segs):
@@ -732,7 +797,7 @@ def _skip(d, v, segs):
             t1, t2 = f"» {n} MIN", "DEPOIS"
             w = max(big.getlength(t1), small.getlength(t2)) + 90 * k
             h = 190 * k
-            cy = H * .47
+            cy = SAFE_B - 260          # below the plane's window (no caption card during a fast-forward): never over it
             al = int(255 * pop)
             d.rounded_rectangle((SAFE_CX - w / 2, cy - h / 2, SAFE_CX + w / 2, cy + h / 2), int(36 * k),
                                 fill=(255, 196, 82, int(240 * pop)), outline=(255, 236, 190, al), width=4)

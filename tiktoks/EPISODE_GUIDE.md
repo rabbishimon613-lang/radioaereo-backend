@@ -1,7 +1,9 @@
 # Rádio Aéreo — episode guide (TikTok explainers from real Guarulhos ATC radio)
 
 Visual template (layout, safe zones, fonts, fast-forward, end card): see `TEMPLATE.md` — the renderer already applies it;
-don't fight it from episode.json (e.g. the camera `oy` is capped at 0.44 so the subject stays above the caption card).
+don't fight it from episode.json. Template v2 (2026-10-24): the camera keeps the focus plane in a protected window between
+the step text and the caption card (`camera.oy` is ignored), and every render writes `layout.json` — `covered_seconds` and
+`tight_seconds` must be empty, otherwise shorten that beat's step (≤ 90 chars) / note (≤ 75) / pt and re-render.
 
 Project root: `/Volumes/EOS_DIGITAL/atc-br` (run everything from there, Python is `.venv/bin/python`).
 Brand: **Rádio Aéreo** · radioaereo.com (the renderer already draws the end card).
@@ -52,7 +54,7 @@ Look at the three finished examples first:
   "measure": true, "measure_from": 0, "measure_until": 3,   // optional: live distance line between first two focus planes, for beats [from, until)
   "camera": {"follow": true, "vw": 1500, "vw_end": 1250, "oy": 0.5},
   //   follow=true tracks focus[0]; or {"follow": false, "center": [x, y] (world meters), ...}
-  //   vw = view width in meters (ground ~1300–3300; airborne/approach 6000–12000); oy = where the target sits vertically (0..1)
+  //   vw = view width in meters (ground ~1300–3300; airborne/approach 6000–12000); oy is ignored (protected window decides)
   "kicker": "Gol · Boeing 737 · 14/10, 03:36",   // airline · aircraft · date, time (BRT)
   "title": "Pousou na segunda tentativa",          // short, ≤ ~40 chars
   "clips": [
@@ -83,5 +85,5 @@ cd /Volumes/EOS_DIGITAL/atc-br
 ```
 Writes `video.mp4` + `cover.jpg` in the episode folder (~1 min). Then **look at it**: extract frames
 (`ffmpeg -v error -y -ss <sec> -i video.mp4 -frames:v 1 -vf scale=432:-1 /tmp/x.png`, a few per beat) and view them.
-Check: focus plane visible and not hidden under the caption card or header, labels not colliding, story readable,
+Check: `layout.json` clean, focus plane visible and not hidden under the caption card or header, labels not colliding, story readable,
 no data glitches (planes teleporting, wrong altitude). Adjust camera/beats and re-render until it reads well.
