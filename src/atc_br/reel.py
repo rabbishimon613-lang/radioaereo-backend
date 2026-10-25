@@ -591,19 +591,28 @@ def _measure(im, M, box, tracks, T, hexes):
         if i % 2 == 0:
             u0, u1 = i / n, (i + 1) / n
             d.line([(ax + (bx - ax) * u0, ay + (by - ay) * u0), (ax + (bx - ax) * u1, ay + (by - ay) * u1)], fill=(255, 255, 255, 200), width=4)
-    def clear(x, y):          # distance to the nearest plane or its label (labels sit up-right of each plane)
-        return min(math.dist((x, y), p) for p in ((ax, ay), (bx, by), (ax + 140, ay - 40), (bx + 140, by - 40), (bx - 140, by - 40)))
-    mx, my = max(((ax + (bx - ax) * u, ay + (by - ay) * u) for u in (.5, .4, .6, .3, .7, .25, .75)), key=lambda p: clear(*p))
+    f1, f2 = font("mono", 40, 800), font("mono", 24, 600)
     txt = f"{dist / 1000:.1f} km".replace(".", ",")
     sub = f"{dist / 1852:.1f} milhas".replace(".", ",")
-    f1, f2 = font("mono", 40, 800), font("mono", 24, 600)
     w = max(f1.getlength(txt), f2.getlength(sub)) + 40
+    # keep-out boxes: each plane (ring) and its label (first focus labels to the right, second to the left)
+    keep = [(ax - 70, ay - 70, ax + 70, ay + 70), (bx - 70, by - 70, bx + 70, by + 70),
+            (ax + 20, ay - 80, ax + 340, ay - 2), (bx - 340, by - 80, bx - 20, by - 2)]
+    lo, hi = LAYOUT["lo"] - PLANE_CLEAR_UP + 50, LAYOUT["hi"] + PLANE_CLEAR_DOWN - 50
+    L = math.hypot(bx - ax, by - ay) or 1
+    nx, ny = -(by - ay) / L, (bx - ax) / L
+
+    def hits(x, y):
+        r = (x - w / 2 - 8, y - 56, x + w / 2 + 8, y + 56)
+        return sum(1 for k in keep if r[0] < k[2] and k[0] < r[2] and r[1] < k[3] and k[1] < r[3])
+    cands = []
+    for u in (.5, .4, .6, .3, .7, .2, .8):
+        for off in (0, 130, -130, 220, -220):
+            x = min(max(ax + (bx - ax) * u + nx * off, SAFE_L + w / 2), SAFE_R - w / 2)
+            y = min(max(ay + (by - ay) * u + ny * off, lo), hi)
+            cands.append((hits(x, y), abs(off), abs(u - .5), x, y))
+    _, _, _, mx, my = min(cands)
     ox = 0
-    mx = min(max(mx, SAFE_L + w / 2), SAFE_R - w / 2)      # keep the tag clear of the right rail
-    my = min(max(my, LAYOUT["lo"] - PLANE_CLEAR_UP + 50), LAYOUT["hi"] + PLANE_CLEAR_DOWN - 50)   # never on the card/step
-    if clear(mx, my) < 150:                                 # still on a plane: step off the line, perpendicular
-        nx, ny = -(by - ay) / L, (bx - ax) / L
-        mx, my = mx + nx * 150, my + ny * 150
     d.rounded_rectangle((mx + ox - w / 2, my - 48, mx + ox + w / 2, my + 48), 16, fill=(14, 17, 26, 240), outline=(255, 255, 255, 120), width=2)
     d.text((mx + ox, my - 14), txt, font=f1, fill=TEXT, anchor="mm")
     d.text((mx + ox, my + 24), sub, font=f2, fill=DIM, anchor="mm")
@@ -611,7 +620,7 @@ def _measure(im, M, box, tracks, T, hexes):
 
 
 MESES = "Janeiro Fevereiro Março Abril Maio Junho Julho Agosto Setembro Outubro Novembro Dezembro".split()
-KICKER_DATE = re.compile(r"\s*·\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?,?\s*\d{1,2}[:h]\d{2}h?\s*$")
+KICKER_DATE = re.compile(r"\s*·\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?,?\s*\d{1,2}[:h]\d{2}h?(?:\s*[–-]\s*\d{1,2}[:h]\d{2}h?)?\s*$")
 
 
 def when(t):
