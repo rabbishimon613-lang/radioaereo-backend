@@ -697,7 +697,12 @@ def _taxi(im, M, box, refs, t, anchor=(SAFE_CX, H * .42)):
         if best:
             # dense points along the visible part, label placed ~300 px from the plane (frame centre) so they never collide
             dense = [(a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u) for a, b in zip(best, best[1:]) for u in (0, .25, .5, .75)] or best
-            X, Y = min(dense, key=lambda p: abs(math.dist(p, anchor) - 300))
+            ax_, ay_ = anchor        # never on the plane or its label (label sits up-right of the plane)
+            ok = [p for p in dense if math.dist(p, anchor) >= 200
+                  and not (ax_ - 120 < p[0] < ax_ + 400 and ay_ - 110 < p[1] < ay_ + 40)]
+            if not ok:
+                continue
+            X, Y = min(ok, key=lambda p: abs(math.dist(p, anchor) - 300))
             txt = f"{ref} · {NATO.get(ref, ref).upper()}" if len(ref) == 1 else ref
             f = font("mono", 30, 800)
             w = f.getlength(txt) + 30
