@@ -397,7 +397,7 @@ def render(spec_path: Path, out: Path | None = None, log=print):
 
     # camera path: follow the first focus aircraft (smoothed), or sit on a fixed point (default: middle of the field)
     if fhex and cam.get("follow", True):
-        raw, spread, pair = [], [], []
+        raw, spread, pair, prim = [], [], [], []
         h2 = fhexes[1] if len(fhexes) > 1 else None
         base = max(cam.get("vw", 1500), cam.get("vw_end", 1250))
         for f in range(n):
@@ -409,11 +409,12 @@ def render(spec_path: Path, out: Path | None = None, log=print):
             far = a and b and max(abs(a[0] - b[0]) * W / max(SAFE_R - SAFE_L - 260, 200),
                                   abs(a[1] - b[1]) * W / max((hi_ - lo_) * .8, 120)) * 1.05 > 3 * base
             pair.append(bool(a and b and not far))
+            prim.append(fhex if a else (h2 if b else None))   # the plane actually framed (main one, or the second if the main isn't on radar yet)
             if a and b and not far:     # both in the shot (unless that needs > 3x zoom-out): centre between them
                 raw.append(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
                 spread.append((abs(a[0] - b[0]), abs(a[1] - b[1])))
             else:
-                raw.append(a or (raw[-1] if raw else None))
+                raw.append(a or b or (raw[-1] if raw else None))
                 spread.append((0, 0))
         first = next(r for r in raw if r)
         raw = [r or first for r in raw]
@@ -435,7 +436,7 @@ def render(spec_path: Path, out: Path | None = None, log=print):
         vws = [sum(need[max(0, f - FPS):f + FPS + 1]) / len(need[max(0, f - FPS):f + FPS + 1]) for f in range(n)]
     else:
         path = [rot(*cam.get("center", (400, -380)))] * n
-        vws, pair = [0] * n, [False] * n
+        vws, pair, prim = [0] * n, [False] * n, [fhex] * n
         vw0, vw1, oy = cam.get("vw", 2700), cam.get("vw_end", 2400), cam.get("oy", .40)
     # (spec camera "oy" is ignored: the protected window decides where the plane sits)
     # only draw the part of the world the camera will see, at a resolution that matches the tightest zoom
@@ -473,7 +474,7 @@ def render(spec_path: Path, out: Path | None = None, log=print):
         beat = max((i for i, s in enumerate(segs) if s["v0"] - .05 <= v), default=0)
         _taxi(im, M, box, segs[beat].get("taxi", []), v - segs[beat]["v0"], (SAFE_CX, H * oy))
         _aircraft(im, d, M, box, tracks, T, fhexes)
-        for hx_ in (fhexes[:2] if pair[f] else fhexes[:1]):   # hard check: the focus planes are never under the text
+        for hx_ in (fhexes[:2] if pair[f] else [prim[f]] if prim[f] else []):   # hard check: framed focus planes never under text
             q = at(tracks[hx_], T, gap=900)
             if q:
                 X, Y = M.to_frame(box, *M.px(q[1], q[2]))
