@@ -10,6 +10,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import subprocess
 import time
 from datetime import datetime
@@ -73,6 +74,35 @@ def _click_if(page, sel, timeout=1500):
         return False
 
 
+DISMISS = re.compile(r"^(Entendi|Ok|OK|Got it|Fechar|Close|Agora não|Not now|Pular|Skip|Concluir|Done)$")   # never a bare "Cancelar": that one cancels the upload
+
+
+def dismiss(page):
+    """Close the tour / tip / content-check dialogs TikTok puts on top (they block clicks), without touching the upload."""
+    for _ in range(4):
+        hit = False
+        for sel, name in (("text=/cancelar o carregamento|cancel (the )?upload/i", re.compile(r"^(Não|No)$")),     # undo a stray cancel
+                          ("text=/verifica[çc][õo]es autom|automatic content check/i", re.compile(r"^(Cancelar|Cancel)$"))):
+            if page.locator(sel).count():
+                for b in page.get_by_role("button", name=name).all():
+                    try:
+                        if b.is_visible():
+                            b.click(timeout=1500)
+                            hit = True
+                    except Exception:
+                        pass
+        for b in page.get_by_role("button", name=DISMISS).all():
+            try:
+                if b.is_visible():
+                    b.click(timeout=1500)
+                    hit = True
+            except Exception:
+                pass
+        if not hit:
+            break
+        page.wait_for_timeout(600)
+
+
 def post_one(page, ep: Path, shots: Path):
     spec = json.loads((ep / "episode.json").read_text())
     mp4 = small_copy(ep / "video.mp4")
@@ -82,25 +112,32 @@ def post_one(page, ep: Path, shots: Path):
     log(f"  uploading {mp4.name} ({mp4.stat().st_size / 1e6:.1f} MB)")
     editor = page.locator("div[contenteditable='true']").first
     editor.wait_for(timeout=120000)
-    _click_if(page, "button:has-text('Cancelar'), button:has-text('Cancel')")   # "turn on automatic content checks?"
-    editor.click()
+    for _ in range(300):              # upload finished = "Enviado" / "Uploaded" under the file name
+        dismiss(page)
+        if page.locator("text=/^\\s*(Enviado|Uploaded)/").count():
+            break
+        time.sleep(1)
+    page.wait_for_timeout(1500)
+    dismiss(page)
+    editor.evaluate("e => e.focus()")   # focus directly: a leftover overlay can't block it
     page.keyboard.press("Meta+A" if os.uname().sysname == "Darwin" else "Control+A")
     page.keyboard.press("Delete")
     for line in caption(spec).split("\n"):
         page.keyboard.type(line, delay=8)
-        page.keyboard.press("Escape")            # close the hashtag suggestion popup
+        page.wait_for_timeout(400)
         page.keyboard.press("Shift+Enter")
-    # wait for the upload to finish: the Post button becomes enabled
-    btn = page.locator("button[data-e2e='post_video_button'], button:has-text('Publicar'), button:has-text('Post')").last
-    for _ in range(240):
-        if btn.is_enabled() and not page.locator("text=/Enviando|Uploading|%/").count():
-            break
-        time.sleep(1)
+    page.mouse.click(5, 5)                # close the hashtag suggestion list
+    dismiss(page)
+    btn = page.locator("button[data-e2e='post_video_button']")
+    if not btn.count():
+        btn = page.get_by_role("button", name=re.compile(r"^(Publicar|Post)$"))
+    btn = btn.first
     page.screenshot(path=str(shots / f"{ep.name}-before.png"))
-    btn.click()
+    btn.scroll_into_view_if_needed()
+    btn.evaluate("b => b.click()")
     _click_if(page, "button:has-text('Publicar agora'), button:has-text('Post now')", 5000)
     for _ in range(90):
-        if "/tiktokstudio/content" in page.url or page.locator("text=/publicado|posted|Gerenciar|Manage your posts/i").count():
+        if "/tiktokstudio/content" in page.url or page.locator("text=/publicado|posted|Gerenciar publica|Manage your posts/i").count():
             break
         time.sleep(1)
     page.screenshot(path=str(shots / f"{ep.name}-after.png"))
