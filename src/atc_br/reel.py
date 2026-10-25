@@ -398,12 +398,14 @@ def render(spec_path: Path, out: Path | None = None, log=print):
     if fhex and cam.get("follow", True):
         raw, spread = [], []
         h2 = fhexes[1] if len(fhexes) > 1 else None
+        base = max(cam.get("vw", 1500), cam.get("vw_end", 1250))
         for f in range(n):
             p = at(tracks[fhex], real(f / FPS), gap=900)
             q = at(tracks[h2], real(f / FPS), gap=900) if h2 else None
             a = rot(p[1], p[2]) if p else None
             b = rot(q[1], q[2]) if q else None
-            if a and b:                 # both in the shot: centre between them, remember how far apart they are
+            far = a and b and max(abs(a[0] - b[0]) * W / (SAFE_R - SAFE_L - 260), abs(a[1] - b[1]) * W / 200) > 3 * base
+            if a and b and not far:     # both in the shot (unless that needs > 3x zoom-out): centre between them
                 raw.append(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
                 spread.append((abs(a[0] - b[0]), abs(a[1] - b[1])))
             else:
