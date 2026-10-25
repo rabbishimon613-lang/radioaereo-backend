@@ -397,7 +397,7 @@ def render(spec_path: Path, out: Path | None = None, log=print):
 
     # camera path: follow the first focus aircraft (smoothed), or sit on a fixed point (default: middle of the field)
     if fhex and cam.get("follow", True):
-        raw, spread = [], []
+        raw, spread, pair = [], [], []
         h2 = fhexes[1] if len(fhexes) > 1 else None
         base = max(cam.get("vw", 1500), cam.get("vw_end", 1250))
         for f in range(n):
@@ -405,7 +405,10 @@ def render(spec_path: Path, out: Path | None = None, log=print):
             q = at(tracks[h2], real(f / FPS), gap=900) if h2 else None
             a = rot(p[1], p[2]) if p else None
             b = rot(q[1], q[2]) if q else None
-            far = a and b and max(abs(a[0] - b[0]) * W / (SAFE_R - SAFE_L - 260), abs(a[1] - b[1]) * W / 200) > 3 * base
+            lo_, hi_ = wins[beat_at[f]]        # same window + formula as the zoom below
+            far = a and b and max(abs(a[0] - b[0]) * W / max(SAFE_R - SAFE_L - 260, 200),
+                                  abs(a[1] - b[1]) * W / max((hi_ - lo_) * .8, 120)) * 1.05 > 3 * base
+            pair.append(bool(a and b and not far))
             if a and b and not far:     # both in the shot (unless that needs > 3x zoom-out): centre between them
                 raw.append(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
                 spread.append((abs(a[0] - b[0]), abs(a[1] - b[1])))
@@ -432,7 +435,7 @@ def render(spec_path: Path, out: Path | None = None, log=print):
         vws = [sum(need[max(0, f - FPS):f + FPS + 1]) / len(need[max(0, f - FPS):f + FPS + 1]) for f in range(n)]
     else:
         path = [rot(*cam.get("center", (400, -380)))] * n
-        vws = [0] * n
+        vws, pair = [0] * n, [False] * n
         vw0, vw1, oy = cam.get("vw", 2700), cam.get("vw_end", 2400), cam.get("oy", .40)
     # (spec camera "oy" is ignored: the protected window decides where the plane sits)
     # only draw the part of the world the camera will see, at a resolution that matches the tightest zoom
@@ -470,7 +473,7 @@ def render(spec_path: Path, out: Path | None = None, log=print):
         beat = max((i for i, s in enumerate(segs) if s["v0"] - .05 <= v), default=0)
         _taxi(im, M, box, segs[beat].get("taxi", []), v - segs[beat]["v0"], (SAFE_CX, H * oy))
         _aircraft(im, d, M, box, tracks, T, fhexes)
-        for hx_ in fhexes[:2]:                     # hard check: the focus planes are never under the text
+        for hx_ in (fhexes[:2] if pair[f] else fhexes[:1]):   # hard check: the focus planes are never under the text
             q = at(tracks[hx_], T, gap=900)
             if q:
                 X, Y = M.to_frame(box, *M.px(q[1], q[2]))
@@ -612,9 +615,9 @@ KICKER_DATE = re.compile(r"\s*·\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?,?\s*\d{1,2}[:h]\
 
 
 def when(t):
-    """'15:23h, 23 de Janeiro 2026' (Brasília time) — the episode's date line, big enough to read on a phone."""
+    """'23 de Janeiro 2026' (Brasília) — the episode's date line; the exact time runs in the big clock top-right."""
     d = datetime.fromtimestamp(t, BRT)
-    return f"{d:%H:%M}h, {d.day} de {MESES[d.month - 1]} {d.year}"
+    return f"{d.day} de {MESES[d.month - 1]} {d.year}"
 
 
 def _header_layer(spec, t0=None):
@@ -697,7 +700,8 @@ def _clock(d, T, v, radio=True):
     m, f, y = SAFE_L + 4, font("mono", 24, 600), SAFE_T + 22
     d.ellipse((m, y - 8, m + 16, y + 8), fill=(255, 84, 84, 255) if int(v * 2) % 2 == 0 else (150, 50, 50, 255))
     d.text((m + 28, y), ("RÁDIO REAL" if radio else "DADOS REAIS") + " · GUARULHOS", font=f, fill=DIM, anchor="lm")
-    d.text((SAFE_R, y), datetime.fromtimestamp(T, BRT).strftime("%H:%M:%Sh"), font=font("mono", 28, 700), fill=TEXT, anchor="rm")
+    # big running clock with seconds, right edge on the safe line, a little below the status line (never higher)
+    d.text((SAFE_R, y + 8), datetime.fromtimestamp(T, BRT).strftime("%H:%M:%Sh"), font=font("mono", 40, 700), fill=TEXT, anchor="rm")
 
 
 def _card_layout(s):

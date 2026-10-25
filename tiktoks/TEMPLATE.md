@@ -35,9 +35,9 @@ Only the map runs under the red zones. Horizontal centre for anything centred = 
 ## Layout, top to bottom
 | element | position | font |
 |---|---|---|
-| live dot + "RÁDIO REAL · GUARULHOS" (or "DADOS REAIS" when there's no radio) / running clock "21:35:29h" BRT, white, right-aligned at x 860 | y 262 | Geist Mono 24/600 · clock Geist Mono 28/700 |
+| live dot + "RÁDIO REAL · GUARULHOS" (or "DADOS REAIS" when there's no radio) / running clock with seconds "21:35:29h" BRT, big + white, right edge on x 860, a bit below the status line | y 262 (clock centre y 270) | Geist Mono 24/600 · clock Geist Mono 40/700 |
 | kicker: AIRLINE · AIRCRAFT (amber; a trailing "· DD/MM, HH:MM" in episode.json is stripped) | y 302 | Geist Mono 26/700 |
-| date line: **"15:23h, 23 de Janeiro 2026"** (BRT, start of the first clip), white — Pedro: the date/time must be easy to read | y 346 | Archivo 36/700 |
+| date line: **"23 de Janeiro 2026"** (BRT, date of the first clip), white — the exact time is the big clock; Pedro: date/time must be easy to read | y 346 | Archivo 36/700 |
 | title (1–2 lines) | from y ≈ 402, 80 px leading | Archivo 76 / wght 830 / wdth 80 |
 | step: "n/N" chip + one plain sentence, fades/slides in per beat | under the title | Geist Mono 26 chip, Archivo 38/560 |
 | map window: focus aircraft in the **protected window** (see above), centred on x 480 | — | — |
