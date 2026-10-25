@@ -132,6 +132,15 @@ def post_one(page, ep: Path, shots: Path):
     if not btn.count():
         btn = page.get_by_role("button", name=re.compile(r"^(Publicar|Post)$"))
     btn = btn.first
+    for _ in range(300):              # Publicar stays disabled until TikTok has processed the upload
+        dismiss(page)
+        if btn.is_enabled() and btn.get_attribute("aria-disabled") not in ("true",) and \
+                "disabled" not in (btn.get_attribute("class") or "").lower():
+            break
+        time.sleep(1)
+    else:
+        page.screenshot(path=str(shots / f"{ep.name}-stuck.png"))
+        raise RuntimeError("Publicar never enabled")
     page.screenshot(path=str(shots / f"{ep.name}-before.png"))
     btn.scroll_into_view_if_needed()
     btn.evaluate("b => b.click()")
@@ -161,11 +170,16 @@ def post_all(eps, state_path: Path):
             if i:
                 time.sleep(GAP_MIN * 60)
             log(f"post {ep.name}")
-            try:
-                ok, spec = post_one(page, ep, shots)
-            except Exception as e:
-                page.screenshot(path=str(shots / f"{ep.name}-error.png"))
-                log(f"  failed: {e}")
+            ok = False
+            for attempt in range(2):          # one clean retry (fresh upload page) if TikTok stalls
+                try:
+                    ok, spec = post_one(page, ep, shots)
+                    if ok:
+                        break
+                except Exception as e:
+                    page.screenshot(path=str(shots / f"{ep.name}-error.png"))
+                    log(f"  attempt {attempt + 1} failed: {e}")
+            if not ok:
                 continue
             if ok:
                 spec["status"], spec["posted"] = "posted", f"{datetime.now():%Y-%m-%d} TikTok @radioaereo"
