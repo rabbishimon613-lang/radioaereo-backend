@@ -11,6 +11,7 @@ import base64
 import json
 import os
 import re
+import signal
 import subprocess
 import time
 from datetime import datetime
@@ -112,10 +113,14 @@ def post_one(page, ep: Path, shots: Path):
     log(f"  uploading {mp4.name} ({mp4.stat().st_size / 1e6:.1f} MB)")
     editor = page.locator("div[contenteditable='true']").first
     editor.wait_for(timeout=120000)
-    for _ in range(300):              # upload finished = "Enviado" / "Uploaded" under the file name
-        dismiss(page)
+    end = time.time() + 240           # upload finished = "Enviado" / "Uploaded" under the file name (real deadline)
+    n = 0
+    while time.time() < end:
         if page.locator("text=/^\\s*(Enviado|Uploaded)/").count():
             break
+        if n % 10 == 0:
+            dismiss(page)
+        n += 1
         time.sleep(1)
     page.wait_for_timeout(1500)
     dismiss(page)
@@ -132,20 +137,25 @@ def post_one(page, ep: Path, shots: Path):
     if not btn.count():
         btn = page.get_by_role("button", name=re.compile(r"^(Publicar|Post)$"))
     btn = btn.first
-    for _ in range(300):              # Publicar stays disabled until TikTok has processed the upload
-        dismiss(page)
-        if btn.is_enabled() and btn.get_attribute("aria-disabled") not in ("true",) and \
+    end, n, ready = time.time() + 180, 0, False   # Publicar stays disabled until TikTok has processed the upload
+    while time.time() < end:
+        if btn.is_enabled() and btn.get_attribute("aria-disabled") != "true" and \
                 "disabled" not in (btn.get_attribute("class") or "").lower():
+            ready = True
             break
+        if n % 10 == 0:
+            dismiss(page)
+        n += 1
         time.sleep(1)
-    else:
+    if not ready:
         page.screenshot(path=str(shots / f"{ep.name}-stuck.png"))
         raise RuntimeError("Publicar never enabled")
     page.screenshot(path=str(shots / f"{ep.name}-before.png"))
     btn.scroll_into_view_if_needed()
     btn.evaluate("b => b.click()")
     _click_if(page, "button:has-text('Publicar agora'), button:has-text('Post now')", 5000)
-    for _ in range(90):
+    end = time.time() + 90
+    while time.time() < end:
         if "/tiktokstudio/content" in page.url or page.locator("text=/publicado|posted|Gerenciar publica|Manage your posts/i").count():
             break
         time.sleep(1)
@@ -155,7 +165,16 @@ def post_one(page, ep: Path, shots: Path):
     return ok, spec
 
 
+class Stuck(Exception):
+    pass
+
+
+def _alarm(*_):
+    raise Stuck("watchdog: post took over 8 minutes")
+
+
 def post_all(eps, state_path: Path):
+    signal.signal(signal.SIGALRM, _alarm)
     from playwright.sync_api import sync_playwright
     posted = json.loads(state_path.read_text()) if state_path.exists() else []
     shots = ROOT / "episodes" / "shots"
@@ -173,10 +192,13 @@ def post_all(eps, state_path: Path):
             ok = False
             for attempt in range(2):          # one clean retry (fresh upload page) if TikTok stalls
                 try:
+                    signal.alarm(480)         # watchdog: no single post may take more than 8 minutes
                     ok, spec = post_one(page, ep, shots)
+                    signal.alarm(0)
                     if ok:
                         break
                 except Exception as e:
+                    signal.alarm(0)
                     page.screenshot(path=str(shots / f"{ep.name}-error.png"))
                     log(f"  attempt {attempt + 1} failed: {e}")
             if not ok:
