@@ -396,10 +396,19 @@ def render(spec_path: Path, out: Path | None = None, log=print):
 
     # camera path: follow the first focus aircraft (smoothed), or sit on a fixed point (default: middle of the field)
     if fhex and cam.get("follow", True):
-        raw = []
+        raw, spread = [], []
+        h2 = fhexes[1] if len(fhexes) > 1 else None
         for f in range(n):
             p = at(tracks[fhex], real(f / FPS), gap=900)
-            raw.append(rot(p[1], p[2]) if p else (raw[-1] if raw else None))
+            q = at(tracks[h2], real(f / FPS), gap=900) if h2 else None
+            a = rot(p[1], p[2]) if p else None
+            b = rot(q[1], q[2]) if q else None
+            if a and b:                 # both in the shot: centre between them, remember how far apart they are
+                raw.append(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
+                spread.append((abs(a[0] - b[0]), abs(a[1] - b[1])))
+            else:
+                raw.append(a or (raw[-1] if raw else None))
+                spread.append((0, 0))
         first = next(r for r in raw if r)
         raw = [r or first for r in raw]
         # smooth over ±0.5 s of video and never more than ±20 real seconds: steady, but the plane stays on its mark
@@ -410,12 +419,22 @@ def render(spec_path: Path, out: Path | None = None, log=print):
             win = [raw[j] for j in range(lo, hi) if abs(rt[j] - rt[i]) <= 20]
             path.append(tuple(sum(c) / len(c) for c in zip(*win)))
         vw0, vw1, oy = cam.get("vw", 1500), cam.get("vw_end", 1250), cam.get("oy", .42)
+        # zoom out just enough that both focus planes stay inside the protected window (x and y), smoothed ±1 s
+        need = []
+        for f in range(n):
+            lo, hi = wins[beat_at[f]]
+            sx, sy = spread[f]
+            need.append(max(sx * W / max(SAFE_R - SAFE_L - 260, 200), sy * W / max((hi - lo) * .8, 120)) * 1.05)
+        need = [max(need[max(0, f - FPS):f + FPS + 1]) for f in range(n)]
+        vws = [sum(need[max(0, f - FPS):f + FPS + 1]) / len(need[max(0, f - FPS):f + FPS + 1]) for f in range(n)]
     else:
         path = [rot(*cam.get("center", (400, -380)))] * n
+        vws = [0] * n
         vw0, vw1, oy = cam.get("vw", 2700), cam.get("vw_end", 2400), cam.get("oy", .40)
     # (spec camera "oy" is ignored: the protected window decides where the plane sits)
     # only draw the part of the world the camera will see, at a resolution that matches the tightest zoom
-    hw, hh = max(vw0, vw1) / 2 + 300, max(vw0, vw1) * H / W + 300
+    vmax = max(vw0, vw1, max(vws))
+    hw, hh = vmax / 2 + 300, vmax * H / W + 300
     xs, ys = zip(*path)
     bounds = (min(xs) - hw, min(ys) - hh, max(xs) + hw, max(ys) + hh)
     k = min(W / min(vw0, vw1) * 1.1, math.sqrt(60e6 / ((bounds[2] - bounds[0]) * (bounds[3] - bounds[1]))))
@@ -442,17 +461,18 @@ def render(spec_path: Path, out: Path | None = None, log=print):
         u = (v / total) ** .9
         oy = oys[f]
         LAYOUT["lo"], LAYOUT["hi"] = wins[beat_at[f]]
-        im, box = M.frame(*path[f], vw0 + (vw1 - vw0) * u, oy)
+        im, box = M.frame(*path[f], max(vw0 + (vw1 - vw0) * u, vws[f]), oy)
         im = im.convert("RGBA")
         d = ImageDraw.Draw(im)
         beat = max((i for i, s in enumerate(segs) if s["v0"] - .05 <= v), default=0)
         _taxi(im, M, box, segs[beat].get("taxi", []), v - segs[beat]["v0"], (SAFE_CX, H * oy))
         _aircraft(im, d, M, box, tracks, T, fhexes)
-        if fhex:                                   # hard check: the focus plane is never under the text
-            q = at(tracks[fhex], T, gap=900)
+        for hx_ in fhexes[:2]:                     # hard check: the focus planes are never under the text
+            q = at(tracks[hx_], T, gap=900)
             if q:
                 X, Y = M.to_frame(box, *M.px(q[1], q[2]))
-                if SAFE_L - 40 < X < SAFE_R + 40 and not (LAYOUT["lo"] - PLANE_CLEAR_UP + 30 <= Y <= LAYOUT["hi"] + PLANE_CLEAR_DOWN - 30):
+                # the plane's whole footprint (icon + ring + label, ~75 px up/down) must sit between step text and card
+                if SAFE_L - 40 < X < SAFE_R + 40 and not (LAYOUT["lo"] - PLANE_CLEAR_UP + 75 <= Y <= LAYOUT["hi"] + PLANE_CLEAR_DOWN - 75):
                     covered.append(round(v, 1))
         if spec.get("measure") and spec.get("measure_from", 0) <= beat < spec.get("measure_until", len(segs)):
             _measure(im, M, box, tracks, T, [h for h in fhexes[:2]])
@@ -565,14 +585,19 @@ def _measure(im, M, box, tracks, T, hexes):
         if i % 2 == 0:
             u0, u1 = i / n, (i + 1) / n
             d.line([(ax + (bx - ax) * u0, ay + (by - ay) * u0), (ax + (bx - ax) * u1, ay + (by - ay) * u1)], fill=(255, 255, 255, 200), width=4)
-    mx, my = (ax + bx) / 2, (ay + by) / 2
+    def clear(x, y):          # distance to the nearest plane or its label (labels sit up-right of each plane)
+        return min(math.dist((x, y), p) for p in ((ax, ay), (bx, by), (ax + 140, ay - 40), (bx + 140, by - 40), (bx - 140, by - 40)))
+    mx, my = max(((ax + (bx - ax) * u, ay + (by - ay) * u) for u in (.5, .4, .6, .3, .7, .25, .75)), key=lambda p: clear(*p))
     txt = f"{dist / 1000:.1f} km".replace(".", ",")
     sub = f"{dist / 1852:.1f} milhas".replace(".", ",")
     f1, f2 = font("mono", 40, 800), font("mono", 24, 600)
     w = max(f1.getlength(txt), f2.getlength(sub)) + 40
-    ox = 170 if mx < SAFE_CX else -170
-    mx = min(max(mx + ox, SAFE_L + w / 2), SAFE_R - w / 2) - ox      # keep the tag clear of the right rail
+    ox = 0
+    mx = min(max(mx, SAFE_L + w / 2), SAFE_R - w / 2)      # keep the tag clear of the right rail
     my = min(max(my, LAYOUT["lo"] - PLANE_CLEAR_UP + 50), LAYOUT["hi"] + PLANE_CLEAR_DOWN - 50)   # never on the card/step
+    if clear(mx, my) < 150:                                 # still on a plane: step off the line, perpendicular
+        nx, ny = -(by - ay) / L, (bx - ax) / L
+        mx, my = mx + nx * 150, my + ny * 150
     d.rounded_rectangle((mx + ox - w / 2, my - 48, mx + ox + w / 2, my + 48), 16, fill=(14, 17, 26, 240), outline=(255, 255, 255, 120), width=2)
     d.text((mx + ox, my - 14), txt, font=f1, fill=TEXT, anchor="mm")
     d.text((mx + ox, my + 24), sub, font=f2, fill=DIM, anchor="mm")
