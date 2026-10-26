@@ -765,6 +765,17 @@ def review(spec, rts, tracks=None):
         return 7, []
 
 
+def shape_problems(spec):
+    if not isinstance(spec, dict) or not isinstance(spec.get("clips"), list) or not spec["clips"]:
+        return ['responda um objeto JSON com "clips": [ {...}, ... ]']
+    bad = [i + 1 for i, c in enumerate(spec["clips"]) if not isinstance(c, dict) or not (c.get("clip") or c.get("silent"))]
+    out = [f"clips {bad}: cada beat tem que ser um objeto com \"clip\" (caminho exato) ou \"silent\"" ] if bad else []
+    for k in ("title", "caption"):
+        if not isinstance(spec.get(k), str) or not spec[k].strip():
+            out.append(f'falta "{k}"')
+    return out
+
+
 def focus_hexes(pick_, cand, tracks):
     fh = (pick_.get("focus_hex_or_callsign") or cand.get("hex") or "").strip()
     hexes = [h for h in tracks if h == fh.lower()] or [h for h, v in tracks.items() if any(p[6] == fh.upper() for p in v)]
@@ -792,6 +803,11 @@ def make(pick_, cand, tracks, day_dir, tries=6):
                     return None
                 continue
             return None
+        bad = shape_problems(new)
+        if bad:                                 # malformed JSON from the model: ask again, never crash
+            spec, fix = new, bad
+            log(f"  attempt {attempt + 1}: malformed episode → {bad}")
+            continue
         spec = repair(new, rts, tracks)
         spec["_why"] = cand["why"]
         fix = problems(spec, rts, tracks)
@@ -899,7 +915,12 @@ def main():
         picks = picks[a.only:a.only + 1]
     for p in picks[:a.max or None]:
         log(f"episode: {p.get('story')}")
-        ep = make(p, cands[p["candidate"]], tracks, day_dir)
+        try:                                    # one broken episode never stops the night
+            ep = make(p, cands[p["candidate"]], tracks, day_dir)
+        except Exception as e:
+            import traceback
+            log(f"  ✗ crashed: {e}\n{traceback.format_exc()[-600:]}")
+            ep = None
         if ep:
             made.append(ep)
     (day_dir / "made.json").parent.mkdir(parents=True, exist_ok=True)
