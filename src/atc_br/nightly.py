@@ -601,7 +601,9 @@ def problems(spec, rts, tracks):
         ph = flight_phase(focus[0], min(ts), max(ts), tracks)
         story = " ".join([spec.get("title", ""), spec.get("caption", "")] + [c.get("step", "") for c in spec["clips"]]).lower()
         kinds = {k for _, k in ph["ev"]}
-        if "decolou" not in kinds and re.search(r"decol\w*|partida|abort\w*", story) and ph.get("role") != "PARTINDO":
+        claims_takeoff = re.search(r"abort\w* (a |sua )?(decolagem|partida)|decolagem abortada|tentou decolar|tenta decolar|"
+                                   r"desist\w* de decolar|cancel\w* (a |sua )?decolagem|\bdecolou\b", story)
+        if "decolou" not in kinds and claims_takeoff and ph.get("role") != "PARTINDO":
             p.append(f"FATO DO ADS-B: {ph['text']}. A história não pode dizer que ele decolou/abortou a decolagem")
         if "pousou" not in kinds and "arremeteu" not in kinds and re.search(r"\bpous(ou|a)\b(?! autoriz)", story) \
                 and ph.get("role") == "PARTINDO":
@@ -660,6 +662,12 @@ def repair(spec, rts, tracks):
             spec["clips"].append({"silent": 3.0, "span": round(max(10, ev[0] - end + 15)), "t": end, "step": step})
     cs = next((q[6] for f in spec.get("focus", []) if f in tracks for q in tracks[f] if q[6]), "")
     num = re.sub(r"^\D+0*", "", cs)
+    # speech over 40 s: drop the longest middle transmissions (first and last carry the setup and the outcome)
+    dur = lambda c: (rts.get(c["clip"]) or {}).get("duration", 0)
+    while sum(dur(c) for c in clips) > 40 and len(clips) > 3:
+        drop = max(clips[1:-1], key=dur)
+        clips.remove(drop)
+        spec["clips"].remove(drop)
     for c in clips:
         r = rts.get(c["clip"]) or {}
         w = re.findall(r"\w+", r.get("text", ""))
