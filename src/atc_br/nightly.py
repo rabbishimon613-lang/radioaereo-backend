@@ -918,7 +918,7 @@ def pull_state(state):
         return json.loads(state.read_text()) if state.exists() else []
     from huggingface_hub import hf_hub_download
     try:
-        p = hf_hub_download(REPO, "episodes/posted.json", repo_type="dataset", token=ENV["HF_TOKEN"])
+        p = hf_hub_download(REPO, "episodes/posted.json", repo_type="dataset", token=ENV["HF_TOKEN"], force_download=True)
         state.parent.mkdir(parents=True, exist_ok=True)
         state.write_text(Path(p).read_text())
     except Exception:
@@ -933,9 +933,20 @@ def push_episodes(day_dir, state):
         api.upload_folder(folder_path=str(day_dir), path_in_repo=f"episodes/{day_dir.name}", repo_id=REPO, repo_type="dataset",
                           allow_patterns=["*/episode.json", "*/video.mp4", "*/cover.jpg", "*/check.png", "made.json"],
                           commit_message=f"episodes {day_dir.name}")
-    if state.exists():
+    if state.exists():                       # merge, never overwrite: several machines post to the same account
+        from huggingface_hub import hf_hub_download
+        mine = json.loads(state.read_text())
+        try:
+            theirs = json.loads(Path(hf_hub_download(REPO, "episodes/posted.json", repo_type="dataset",
+                                                     token=ENV.get("HF_TOKEN"), force_download=True)).read_text())
+        except Exception:
+            theirs = []
+        merged = {e.get("episode") or e["title"]: e for e in theirs}
+        for e in mine:
+            merged[e.get("episode") or e["title"]] = {**merged.get(e.get("episode") or e["title"], {}), **e}
+        state.write_text(json.dumps(list(merged.values()), ensure_ascii=False, indent=1))
         api.upload_file(path_or_fileobj=str(state), path_in_repo="episodes/posted.json", repo_id=REPO, repo_type="dataset",
-                        commit_message="posted.json")
+                        commit_message="posted.json (merged)")
 
 
 if __name__ == "__main__":
