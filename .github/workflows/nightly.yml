@@ -2,7 +2,7 @@
 name: nightly
 on:
   schedule:
-    - cron: "0 7 * * *"          # 04:00 BRT
+    - cron: "17 6 * * *"         # 03:17 BRT (odd minute: GitHub delays top-of-hour jobs the most; window = last 24 h)
   workflow_dispatch:
     inputs:
       args:
@@ -11,6 +11,10 @@ on:
       post:
         type: boolean
         default: true
+      dry:
+        description: "go through the TikTok upload page but stop before Publicar"
+        type: boolean
+        default: false
 concurrency: nightly
 jobs:
   run:
@@ -30,6 +34,7 @@ jobs:
           OPENROUTER_API_KEYS: ${{ secrets.OPENROUTER_API_KEYS }}
           TIKTOK_STATE: ${{ secrets.TIKTOK_STATE }}
           HF_HUB_DISABLE_PROGRESS_BARS: "1"
+          POST_DRY: ${{ inputs.dry && '1' || '' }}
         run: |
           POST=""
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.post }}" = "true" ]; then POST="--post"; fi

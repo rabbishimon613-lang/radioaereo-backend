@@ -102,7 +102,8 @@ def phrase_prompt(cs, go_around=False):
     """Standard Guarulhos phraseology (no numbers, so nothing gets invented) + the plane's spoken callsign. Whisper hears
     'autorizado pouso 28 esquerda' instead of 'autorizado por um desequilíbrio'. 'Arremeter' only when ADS-B confirmed one."""
     return (f"Torre Guarulhos, Controle São Paulo, Solo Guarulhos. {spoken(cs)}. Pista 28 esquerda, 28 direita, 10 esquerda, "
-            "10 direita. Autorizado pouso, autorizado decolagem, vento, graus, nós, mantenha, suba, curva, aproximação, solo."
+            "10 direita. Autorizado pouso, autorizado decolagem, vento, graus, nós, mantenha, suba, curva, aproximação, solo, "
+            "estabilizado no ILS, localizador, aproximação final."
             + (" Arremeter." if go_around else ""))
 
 
@@ -393,6 +394,30 @@ def facts(hexes, t0, t1, tracks):
     return "\n".join(out)
 
 
+def flight_phase(hx, t0, t1, tracks):
+    """What ADS-B says the focus plane really did around the story (trusted over any transcript or guess)."""
+    v = [p for p in tracks.get(hx, []) if t0 - 900 <= p[0] <= t1 + 1200]
+    if not v:
+        return {"ev": [], "text": "sem ADS-B"}
+    ev = [(e["t"], "arremeteu") for e in adsb_events({hx: tracks[hx]}) if "arremetida" in e["what"] and t0 - 900 <= e["t"] <= t1 + 1200]
+    for a, b in zip(v, v[1:]):
+        if a[5] != b[5] and (b[0] - a[0]) < 120:
+            ev.append((b[0], "pousou" if b[5] else "decolou"))
+    ev.sort()
+    first = v[0]
+    start = "no solo" if first[5] else f"no ar a {first[3] - FIELD:.0f} ft, a {dist_km(first[1], first[2]):.0f} km"
+    kinds = {k for _, k in ev}
+    role = ("CHEGANDO" if "pousou" in kinds or "arremeteu" in kinds or (not first[5] and v[-1][3] < first[3] - 300)
+            else "PARTINDO" if "decolou" in kinds else "no solo (táxi)" if first[5] else "sobrevoando")
+    txt = f"o avião estava {role} (começa {start}); " + ("; ".join(f"{k.upper()} às {datetime.fromtimestamp(t, BRT):%H:%M:%S}"
+                                                            for t, k in ev) or "nenhum pouso/decolagem nesse período")
+    if "decolou" not in kinds:
+        txt += ". Ele NÃO decolou neste período"
+    if "arremeteu" in kinds:
+        txt += ". Arremeter = desistir do POUSO e subir de novo (não é abortar decolagem)"
+    return {"ev": ev, "text": txt, "role": role}
+
+
 def route(cs):
     try:
         fr = requests.get(f"https://api.adsbdb.com/v0/callsign/{cs}", timeout=10).json().get("response", {}).get("flightroute")
@@ -473,6 +498,8 @@ def write(pick_, cand, tracks, fix=None, prev=None):
             f"retranscritas abaixo e o ADS-B realmente mostram): {pick_.get('story')}\nSINAIS: {'; '.join(cand['why'])}\n"
             f"EVENTO por volta de {datetime.fromtimestamp(mid, BRT):%H:%M:%S}: os beats têm que mostrar o que leva a ele, o momento em si "
             f"(a fala-chave) e o que vem logo depois.\n"
+            f"FATOS DO ADS-B (confiáveis, valem mais que o palpite e que qualquer transcrição): "
+            f"{flight_phase(hexes[0], t0, t1, tracks)['text'] if hexes else 'sem ADS-B'}\n"
             f"ROTA: {route(cs)}\nFOCO: {', '.join(hexes) or fh}\nADS-B:\n{chr(10).join(facts(hexes, t0, t1, tracks).splitlines()[:30])}\n\n"
             f"TRANSMISSÕES (retranscritas):\n" + "\n".join(rt))
     if fix:
@@ -553,6 +580,15 @@ def problems(spec, rts, tracks):
             c.pop("pt")          # Portuguese radio: big text is the verbatim transcript only
         if c.get("who") not in ("atc", "plt"):
             c["who"] = "atc"
+        st = (c.get("step") or "").lower()          # the sentence must not put the words in the wrong mouth
+        says_atc = re.match(r"(a |o )?(torre|controle|controlador|solo|aproxima)", st)
+        says_plt = re.match(r"(o |a )?(piloto|tripula|comandante)", st)
+        if not c.pop("_sure", False) and (says_atc or says_plt):   # only a callsign-position guess: trust the writer's sentence
+            c["who"] = "atc" if says_atc else "plt"
+        if c["who"] == "plt" and says_atc:
+            p.append(f"beat {spec['clips'].index(c) + 1}: quem fala é o PILOTO ({r['text'][:60]}…), mas o step diz que é a torre/controle")
+        if c["who"] == "atc" and says_plt:
+            p.append(f"beat {spec['clips'].index(c) + 1}: quem fala é o CONTROLADOR ({r['text'][:60]}…), mas o step diz que é o piloto")
     if not re.search(r"🎧 Áudio real do rádio, \d\d/\d\d\.$", spec.get("caption", "").strip()):
         p.append("caption precisa terminar com '🎧 Áudio real do rádio, DD/MM.'")
     said_ga = any(re.search(r"arremet|go.?around", (r or {}).get("text", ""), re.I) for r in rts.values())
@@ -560,6 +596,29 @@ def problems(spec, rts, tracks):
             and not said_ga and not any("arremetida" in w for w in spec.get("_why", [])):
         p.append("o roteiro fala em arremetida mas nem o áudio nem o ADS-B confirmam; diga só o que o rádio mostra")
     focus = [f for f in spec.get("focus", []) if f in tracks]
+    if focus and clips:
+        ts = [_clip_t(c["clip"]) for c in clips]
+        ph = flight_phase(focus[0], min(ts), max(ts), tracks)
+        story = " ".join([spec.get("title", ""), spec.get("caption", "")] + [c.get("step", "") for c in spec["clips"]]).lower()
+        kinds = {k for _, k in ph["ev"]}
+        if "decolou" not in kinds and re.search(r"decol\w*|partida|abort\w*", story) and ph.get("role") != "PARTINDO":
+            p.append(f"FATO DO ADS-B: {ph['text']}. A história não pode dizer que ele decolou/abortou a decolagem")
+        if "pousou" not in kinds and "arremeteu" not in kinds and re.search(r"\bpous(ou|a)\b(?! autoriz)", story) \
+                and ph.get("role") == "PARTINDO":
+            p.append(f"FATO DO ADS-B: {ph['text']}. Ele estava partindo; não diga que pousou")
+    try:
+        from . import reel                    # same window maths as the renderer, before spending a render on it
+        c0 = next((c for c in clips), None)
+        hh = reel._header_layer(spec, _clip_t(c0["clip"]) if c0 else None)[1]
+        need = 200 if len(focus) > 1 else 80
+        for i, c in enumerate(spec.get("clips", [])):
+            lo = reel._step_bottom(c, hh) + reel.PLANE_CLEAR_UP
+            hi = (reel._card_layout(c)[0] if c.get("clip") else reel.SAFE_B - 60) - reel.PLANE_CLEAR_DOWN
+            if hi - lo < need:
+                p.append(f"beat {i + 1}: step + cartão altos demais pro avião aparecer — encurte o step (≤ 70 caracteres), "
+                         "tire a note desse beat ou corte o text/pt com '…'")
+    except Exception as e:
+        log(f"[layout precheck] {e}")
     if not focus:
         p.append("foco sem ADS-B: escolha o hex de um avião da história que aparece nos dados")
     else:
@@ -580,6 +639,13 @@ def outcome(hexes, after, tracks):
     return None
 
 
+PILOT_SAYS = re.compile(r"\b(estabilizad\w*|ciente|copiad\w*|aguardando|iniciando|solicit\w*|pronto|nivelad\w*|mantendo|subindo|"
+                        r"descendo|chamando|nós estamos|estamos|arremetendo|we have|we are|request\w*|ready|with you|established|"
+                        r"climbing|descending|going around|wilco|roger|copied)\b")
+ATC_SAYS = re.compile(r"\b(autorizad\w*|livre|mantenha|suba|desça|desca|curva|chame|reporte|aguarde|contate|arremeta|cruze|alinhe|"
+                      r"prossiga|cleared|climb|descend|turn|contact|maintain|hold short|line up|go around|expect|report)\b")
+
+
 def repair(spec, rts, tracks):
     """Things code gets right every time: the closing silent beat comes from ADS-B, English lines get a Portuguese line."""
     clips = [c for c in spec.get("clips", []) if c.get("clip")]
@@ -598,11 +664,26 @@ def repair(spec, rts, tracks):
         r = rts.get(c["clip"]) or {}
         w = re.findall(r"\w+", r.get("text", ""))
         pos = [i for i, x in enumerate(w) if num and num in x]
-        if pos and c["clip"].split("/")[2] != "atis":   # radio convention: controllers lead with the callsign, pilots end with it
+        said = (r.get("text") or "").lower()
+        pl, at = bool(PILOT_SAYS.search(said)), bool(ATC_SAYS.search(said))
+        c["_sure"] = pl != at                # wording decided it (an order vs a report)
+        if pl and not at:                    # pilots report and read back; controllers give orders
+            c["who"] = "plt"
+        elif at and not pl:
+            c["who"] = "atc"
+        elif pos and c["clip"].split("/")[2] != "atis":   # radio convention: controllers lead with the callsign, pilots end with it
             if pos[-1] >= len(w) - 2 and pos[0] > 1:
                 c["who"] = "plt"
             elif pos[0] <= 1 and pos[-1] < len(w) - 2:
                 c["who"] = "atc"
+        if c.get("note") and len(c["note"]) > 75:
+            c.pop("note")
+    from .reel import KICKER_DATE
+    spec["kicker"] = KICKER_DATE.sub("", spec.get("kicker") or "")   # the video's date line comes from the clip time
+    if clips:
+        day = datetime.fromtimestamp(min(_clip_t(c["clip"]) for c in clips), BRT).strftime("%d/%m")
+        cap = re.sub(r"\s*🎧.*$", "", (spec.get("caption") or "").strip())
+        spec["caption"] = f"{cap} 🎧 Áudio real do rádio, {day}."
         if r.get("language", "").lower().startswith(("en", "english")) and not c.get("pt"):
             try:
                 c["pt"] = chat("Traduza a fala de rádio de aviação para português do Brasil simples. JSON {\"pt\": \"...\"}",
@@ -656,26 +737,46 @@ CRITIC = """Você revisa roteiros do Rádio Aéreo antes de postar. Seja exigent
 não critique a fraseologia, erros de digitação ou números dentro dele (é o que foi dito/ouvido). Julgue os passos ("step"),
 notas, título, legenda e a história. Responda JSON
 {"score": 1-10, "problems": ["..."]}: score = quanto um brasileiro comum entenderia e acharia interessante assistir até o fim.
+Você recebe também os FATOS DO ADS-B (confiáveis). Se o roteiro contradiz esses fatos (ex.: diz que decolou/abortou a
+decolagem quando o avião estava chegando e arremeteu), ou conta algo que as falas não mostram, marque "fatal": true.
+Responda {"score": 1-10, "fatal": true/false, "problems": [...]}.
 Penalize: tradução ("pt") que acrescenta sentido que o original ("text") não tem (ex.: "clear out" virar "arremeta"),
 palavras inventadas pelo Whisper deixadas no texto (saudações estranhas, outra língua), história confusa, beats que não se ligam, passos que não batem com as falas, canal errado (final = Controle São Paulo,
 não torre), afirmações sem prova, título/legenda exagerados ou falsos, jargão sem explicação."""
 
 
-def review(spec, rts):
+def review(spec, rts, tracks=None):
     view = {k: spec.get(k) for k in ("kicker", "title", "caption")}
+    focus = [f for f in spec.get("focus", []) if tracks and f in tracks]
+    clips = [c for c in spec.get("clips", []) if c.get("clip")]
+    if focus and clips:
+        ts = [_clip_t(c["clip"]) for c in clips]
+        view["FATOS_DO_ADSB"] = flight_phase(focus[0], min(ts), max(ts), tracks)["text"]
     view["beats"] = [{k: c.get(k) for k in ("step", "note", "text", "pt", "who", "silent")} | {"canal": CHANNELS.get(c["clip"].split("/")[2], "")}
                      if c.get("clip") else {"silent": c.get("silent"), "step": c.get("step")} for c in spec["clips"]]
     try:
         r = chat(CRITIC, json.dumps(view, ensure_ascii=False))
-        return int(r.get("score", 0)), r.get("problems", [])
+        score = int(r.get("score", 0))
+        if r.get("fatal"):
+            score = min(score, 3)
+        return score, r.get("problems", [])
     except Exception as e:
         log(f"[critic] {e}")
         return 7, []
 
 
+def focus_hexes(pick_, cand, tracks):
+    fh = (pick_.get("focus_hex_or_callsign") or cand.get("hex") or "").strip()
+    hexes = [h for h in tracks if h == fh.lower()] or [h for h, v in tracks.items() if any(p[6] == fh.upper() for p in v)]
+    return hexes or ([cand["hex"]] if cand.get("hex") in tracks else [])
+
+
 def make(pick_, cand, tracks, day_dir, tries=6):
     from .reel import render
     spec, rts, fix = None, {}, None
+    if not focus_hexes(pick_, cand, tracks):
+        log("  skip: the story's plane isn't on ADS-B (nothing to show on the map)")
+        return None
     for attempt in range(tries):
         new, r = write(pick_, cand, tracks, fix, spec)
         rts.update(r)
@@ -696,9 +797,9 @@ def make(pick_, cand, tracks, day_dir, tries=6):
         fix = problems(spec, rts, tracks)
         (dbg / f"{tag}_{attempt}_spec.json").write_text(json.dumps({"spec": spec, "problems": fix}, ensure_ascii=False, indent=1))
         if not fix:
-            score, crit = review(spec, rts)
+            score, crit = review(spec, rts, tracks)
             log(f"  critic {score}/10 {crit[:2]}")
-            if score < 7:
+            if score < 7 or (score == 7 and crit and attempt < tries - 1):   # 8+ passes; a 7 only without open problems
                 fix = crit or ["história fraca ou confusa; deixe mais clara"]
         if fix:
             log(f"  attempt {attempt + 1}: {len(fix)} problems → rewrite: {fix[:3]}")
@@ -710,6 +811,7 @@ def make(pick_, cand, tracks, day_dir, tries=6):
         ep = day_dir / f"{datetime.fromtimestamp(_clip_t(spec['clips'][0].get('clip') or cand['lines'][0]['clip']), BRT):%Y-%m-%d}_{slug}"
         ep.mkdir(parents=True, exist_ok=True)
         why = spec.pop("_why")
+        spec["_event"] = {"hex": (spec.get("focus") or [""])[0], "t": round(_clip_t(spec["clips"][0]["clip"]))}
         (ep / "episode.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2))
         try:
             render(ep / "episode.json", log=log)
@@ -731,7 +833,7 @@ def make(pick_, cand, tracks, day_dir, tries=6):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--end", help="window end, UTC ISO (default: last 07:00Z = 04:00 BRT)")
+    ap.add_argument("--end", help="window end, UTC ISO or 'now' (default: the current hour; the archive has up to the last one)")
     ap.add_argument("--hours", type=float, default=24)
     ap.add_argument("--max", type=int, default=0, help="cap episodes (0 = every pick)")
     ap.add_argument("--no-fetch", action="store_true", help="use data/ as is (Mac)")
@@ -750,7 +852,7 @@ def main():
         a.end, a.hours = (ev + timedelta(hours=1)).isoformat(), 2
     end = now.replace(minute=0, second=0, microsecond=0) if a.end == "now" else \
         datetime.fromisoformat(a.end.replace("Z", "+00:00")) if a.end else \
-        now.replace(hour=7, minute=0, second=0, microsecond=0) - (timedelta(days=1) if now.hour < 7 else timedelta())
+        now.replace(minute=0, second=0, microsecond=0)
     t1, t0 = end.timestamp(), (end - timedelta(hours=a.hours)).timestamp()
     log(f"window {datetime.fromtimestamp(t0, BRT):%d/%m %H:%M} → {datetime.fromtimestamp(t1, BRT):%d/%m %H:%M} BRT")
     if not a.no_fetch and not fetch(t0, t1):
@@ -780,8 +882,19 @@ def main():
     log(f"{len(picks)} picks: " + " | ".join(f"{p['score']} {p.get('story')}" for p in picks))
     day_dir = OUT / f"{end:%Y-%m-%d}"
     made = []
-    seen = set()
-    picks = [p for p in picks if not (p["candidate"] in seen or seen.add(p["candidate"]))]
+    kept = []
+    done = [(e.get("hex"), e.get("t", 0)) for e in posted if e.get("hex")]
+    for p in sorted(picks, key=lambda p: -p.get("score", 0)):
+        hx = (focus_hexes(p, cands[p["candidate"]], tracks) or [None])[0]
+        t = cands[p["candidate"]]["t0"]
+        p["_hex"] = hx
+        if any(q["candidate"] == p["candidate"] or (hx and q["_hex"] == hx and abs(cands[q["candidate"]]["t0"] - t) < 1800) for q in kept):
+            continue
+        if hx and any(h == hx and abs(t0_ - t) < 3600 for h, t0_ in done):
+            log(f"  already posted: {p.get('story')}")
+            continue
+        kept.append(p)
+    picks = kept
     if a.only is not None:
         picks = picks[a.only:a.only + 1]
     for p in picks[:a.max or None]:

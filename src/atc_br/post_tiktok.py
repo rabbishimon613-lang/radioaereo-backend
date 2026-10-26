@@ -127,10 +127,20 @@ def post_one(page, ep: Path, shots: Path):
     editor.evaluate("e => e.focus()")   # focus directly: a leftover overlay can't block it
     page.keyboard.press("Meta+A" if os.uname().sysname == "Darwin" else "Control+A")
     page.keyboard.press("Delete")
-    for line in caption(spec).split("\n"):
-        page.keyboard.type(line, delay=8)
+    # insert text instead of typing keys: typing drops accents (ç, ã) on the Linux runner. Hashtags: "#" is typed so the
+    # editor turns each one into a real tag, the word itself is inserted, then a space closes the suggestion list.
+    page.keyboard.insert_text(spec["caption"].strip())
+    page.keyboard.press("Shift+Enter")
+    page.keyboard.press("Shift+Enter")
+    for tag in spec["hashtags"]:
+        for ch in "#" + tag.lstrip("#"):     # ASCII typed (the editor builds the tag), accents inserted (Linux drops them)
+            if ord(ch) < 128:
+                page.keyboard.type(ch, delay=25)
+            else:
+                page.keyboard.insert_text(ch)
+        page.wait_for_timeout(600)
+        page.keyboard.press("Space")
         page.wait_for_timeout(400)
-        page.keyboard.press("Shift+Enter")
     page.mouse.click(5, 5)                # close the hashtag suggestion list
     dismiss(page)
     btn = page.locator("button[data-e2e='post_video_button']")
@@ -151,6 +161,9 @@ def post_one(page, ep: Path, shots: Path):
         page.screenshot(path=str(shots / f"{ep.name}-stuck.png"))
         raise RuntimeError("Publicar never enabled")
     page.screenshot(path=str(shots / f"{ep.name}-before.png"))
+    if os.environ.get("POST_DRY"):              # test the whole flow without publishing
+        log(f"  dry run: stopped before Publicar ({shots / (ep.name + '-before.png')})")
+        return False, spec
     btn.scroll_into_view_if_needed()
     btn.evaluate("b => b.click()")
     _click_if(page, "button:has-text('Publicar agora'), button:has-text('Post now')", 5000)
@@ -206,7 +219,8 @@ def post_all(eps, state_path: Path):
             if ok:
                 spec["status"], spec["posted"] = "posted", f"{datetime.now():%Y-%m-%d} TikTok @radioaereo"
                 (ep / "episode.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2))
-                posted.append({"title": spec["title"], "episode": ep.name, "at": datetime.now().isoformat(timespec="minutes")})
+                posted.append({"title": spec["title"], "episode": ep.name, "at": datetime.now().isoformat(timespec="minutes"),
+                               **(spec.get("_event") or {})})
                 state_path.parent.mkdir(parents=True, exist_ok=True)
                 state_path.write_text(json.dumps(posted, ensure_ascii=False, indent=1))
         ctx.storage_state(path=str(STATE))   # refreshed cookies; the workflow can save them back
